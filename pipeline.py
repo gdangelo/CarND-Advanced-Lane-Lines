@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import glob
 import matplotlib.pyplot as plt
+import pickle
+import os
 
 def get_points_for_calibration(nx, ny):
     # Prepare object points
@@ -35,24 +37,25 @@ def get_points_for_calibration(nx, ny):
 
     return (objpoints, imgpoints)
 
-def calibrate_camera_undistort(img, objpoints, imgpoints):
-    # Do camera calibration given object points and image points
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img.shape[1::-1], None, None)
-    return cv2.undistort(img, mtx, dist, None, mtx)
-
 if __name__ == '__main__':
-    objpoints, imgpoints = get_points_for_calibration(9, 6)
+    ########## Calibrate camera and save results ##########
+    mtx = []
+    dist = []
+    calibration_file = "calibration_pickle.p"
 
-    # Read in an image for testing
-    img = cv2.imread('./test_images/test1.jpg')
-    undistorted = calibrate_camera_undistort(img, objpoints, imgpoints)
+    if os.path.exists(calibration_file):
+        print("Read in the calibration data")
+        calibration_pickle = pickle.load(open(calibration_file, "rb"))
+        mtx = calibration_pickle["mtx"]
+        dist = calibration_pickle["dist"]
+    else:
+        print("Calibrate camera...")
+        objpoints, imgpoints = get_points_for_calibration(9, 6)
+        img = cv2.imread('./test_images/test1.jpg')
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img.shape[1::-1], None, None)
 
-    # Draw original and undistorted images
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
-    f.tight_layout()
-    ax1.imshow(img)
-    ax1.set_title('Original Image', fontsize=50)
-    ax2.imshow(undistorted)
-    ax2.set_title('Undistorted Image', fontsize=50)
-    plt.subplots_adjust(left=0., right=1, top=0.9, bottom=0.3)
-    plt.savefig('./output_images/calibration/original_undistorted.jpg')
+        print("Save the camera calibration result for later use")
+        calibration_pickle = {}
+        calibration_pickle["mtx"] = mtx
+        calibration_pickle["dist"] = dist
+        pickle.dump(calibration_pickle, open(calibration_file, "wb"))
