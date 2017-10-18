@@ -100,17 +100,44 @@ def gradient_threshold(img):
 
     return combined
 
+def perspective_transform(img):
+    # From trapezoidale shape on straight lines...
+    src = np.float32([[610, 439], [670, 439], [1029, 668], [275, 668]])
+    # ...to rectangle
+    dst = np.float32([[275, 439], [1029, 439], [1029, 668], [275, 668]])
+    M = cv2.getPerspectiveTransform(src, dst)
+    #Minv = cv2.getPerspectiveTransform(dst, src)
+    return cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+
+def save_image_transform(original, transformed, is_gray, file_name):
+    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
+    ax1.imshow(original)
+    ax1.set_title('Original Image', fontsize=30)
+    if (is_gray == True):
+        ax2.imshow(transformed, cmap='gray')
+    else:
+        ax2.imshow(transformed)
+    ax2.set_title('Result Image', fontsize=30)
+    plt.savefig('./output_images/' + file_name + '.jpg')
+
 def pipeline(img):
     ### 1. Distortion correction ###
     print('Undistort image...')
     undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+    save_image_transform(img, undistorted, False, 'undistorted')
 
     ### 2. Gradient threshold ###
     print('Apply gradient threshold...')
-    result = gradient_threshold(undistorted)
+    gradient = gradient_threshold(undistorted)
+    save_image_transform(img, gradient, True, 'gradient')
+
+    ### 3. Perspective transformation ###
+    print('Apply perspective transform...')
+    perspective = perspective_transform(undistorted)
+    save_image_transform(img, perspective, False, 'perspective')
 
     print('Done!')
-    return result
+    return perspective
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -132,13 +159,6 @@ if __name__ == '__main__':
         pickle.dump(calibration_pickle, open(calibration_file, "wb"))
 
     ### Apply pipeline ###
-    img = cv2.imread('./test_images/test1.jpg')
+    img = cv2.imread('./test_images/straight_lines1.jpg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     result = pipeline(img)
-
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
-    ax1.imshow(img)
-    ax1.set_title('Original Image', fontsize=30)
-    ax2.imshow(result, cmap='gray')
-    ax2.set_title('Result Image', fontsize=30)
-    plt.savefig('./output_images/result.jpg')
