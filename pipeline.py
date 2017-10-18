@@ -102,9 +102,9 @@ def gradient_threshold(img):
 
 def perspective_transform(img):
     # From trapezoidale shape on straight lines...
-    src = np.float32([[610, 439], [670, 439], [1029, 668], [275, 668]])
+    src = np.float32([[519, 502], [765, 502], [1029, 668], [275, 668]])
     # ...to rectangle
-    dst = np.float32([[275, 439], [1029, 439], [1029, 668], [275, 668]])
+    dst = np.float32([[275, 502], [1029, 502], [1029, 668], [275, 668]])
     M = cv2.getPerspectiveTransform(src, dst)
     #Minv = cv2.getPerspectiveTransform(dst, src)
     return cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR)
