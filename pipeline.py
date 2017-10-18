@@ -5,6 +5,18 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 
+# Parameters for calibration
+mtx = []
+dist = []
+calibration_file = "calibration_pickle.p"
+
+# Parameters for gradient threshold
+ksize = 3
+gradx_thresh = (170, 255)
+grady_thresh = (170, 255)
+magni_thresh = (30, 255)
+dir_thresh = (0.25, 1.0)
+
 def get_points_for_calibration(nx, ny):
     # Prepare object points
     objp = np.zeros((ny*nx,3), np.float32)
@@ -37,12 +49,71 @@ def get_points_for_calibration(nx, ny):
 
     return (objpoints, imgpoints)
 
-if __name__ == '__main__':
-    ########## Calibrate camera and save results ##########
-    mtx = []
-    dist = []
-    calibration_file = "calibration_pickle.p"
+def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0, 255)):
+    # Calculate directional gradient
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    x = 1 if orient == 'x' else 0
+    y = 1 if orient == 'y' else 0
+    sobel = cv2.Sobel(gray, cv2.CV_64F, x, y, ksize=sobel_kernel)
+    abs_sobel = np.absolute(sobel)
+    sobel_scaled = np.uint8(255*abs_sobel/np.max(abs_sobel))
+    # Apply threshold
+    grad_binary = np.zeros_like(sobel_scaled)
+    grad_binary[(sobel_scaled >= thresh[0]) & (sobel_scaled <= thresh[1])] = 1
+    return grad_binary
 
+def mag_thresh(img, sobel_kernel=3, thresh=(0, 255)):
+    # Calculate gradient magnitude
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    mag = np.sqrt(np.add(np.square(sobelx), np.square(sobely)))
+    sobel_scaled = np.uint8(255*mag/np.max(mag))
+    # Apply threshold
+    mag_binary = np.zeros_like(sobel_scaled)
+    mag_binary[(sobel_scaled >= thresh[0]) & (sobel_scaled <= thresh[1])] = 1
+    return mag_binary
+
+def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
+    # Calculate gradient direction
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    abs_sobelx = np.absolute(sobelx)
+    abs_sobely = np.absolute(sobely)
+    direction = np.arctan2(abs_sobely, abs_sobely)
+    # Apply threshold
+    dir_binary = np.zeros_like(direction)
+    dir_binary[(direction >= thresh[0]) & (direction <= thresh[1])] = 1
+    return dir_binary
+
+def gradient_threshold(img):
+    # Apply each of the thresholding functions
+    gradx = abs_sobel_thresh(img, orient='x', sobel_kernel=ksize, thresh=gradx_thresh)
+    grady = abs_sobel_thresh(img, orient='y', sobel_kernel=ksize, thresh=grady_thresh)
+    mag_binary = mag_thresh(img, sobel_kernel=ksize, thresh=magni_thresh)
+    dir_binary = dir_threshold(img, sobel_kernel=ksize, thresh=dir_thresh)
+
+    # Combine threshold
+    combined = np.zeros_like(dir_binary)
+    combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
+
+    return combined
+
+def pipeline(img):
+    ### 1. Distortion correction ###
+    print('Undistort image...')
+    undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+
+    ### 2. Gradient threshold ###
+    print('Apply gradient threshold...')
+    result = gradient_threshold(undistorted)
+
+    print('Done!')
+    return result
+
+if __name__ == '__main__':
+    ### Camera calibration ###
     if os.path.exists(calibration_file):
         print("Read in the calibration data")
         calibration_pickle = pickle.load(open(calibration_file, "rb"))
@@ -59,3 +130,15 @@ if __name__ == '__main__':
         calibration_pickle["mtx"] = mtx
         calibration_pickle["dist"] = dist
         pickle.dump(calibration_pickle, open(calibration_file, "wb"))
+
+    ### Apply pipeline ###
+    img = cv2.imread('./test_images/test1.jpg')
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    result = pipeline(img)
+
+    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
+    ax1.imshow(img)
+    ax1.set_title('Original Image', fontsize=30)
+    ax2.imshow(result, cmap='gray')
+    ax2.set_title('Result Image', fontsize=30)
+    plt.savefig('./output_images/result.jpg')
