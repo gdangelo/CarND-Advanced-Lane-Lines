@@ -11,11 +11,12 @@ dist = []
 calibration_file = "calibration_pickle.p"
 
 # Parameters for gradient threshold
-ksize = 3
-gradx_thresh = (170, 255)
-grady_thresh = (170, 255)
-magni_thresh = (30, 255)
-dir_thresh = (0.25, 1.0)
+ksize = 7
+gradx_thresh = (25, 255)
+grady_thresh = (25, 255)
+magni_thresh = (25, 255)
+dir_thresh = (0., 0.09)
+hls_thresh = (125, 255)
 
 def get_points_for_calibration(nx, ny):
     # Prepare object points
@@ -87,16 +88,29 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     dir_binary[(direction >= thresh[0]) & (direction <= thresh[1])] = 1
     return dir_binary
 
-def gradient_threshold(img):
-    # Apply each of the thresholding functions
+def hls_threshold(img, thresh=(0, 255)):
+    hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+    S_channel = hls[:,:,2]
+    color_binary = np.zeros_like(S_channel)
+    color_binary[(S_channel >= thresh[0]) & (S_channel <= thresh[1])] = 1
+    return color_binary
+
+def color_gradient_threshold(img):
+    # Apply color gradient (S channel)
+    hls_binary = hls_threshold(img, thresh=hls_thresh)
+
+    # Apply gradient thresholding functions
     gradx = abs_sobel_thresh(img, orient='x', sobel_kernel=ksize, thresh=gradx_thresh)
     grady = abs_sobel_thresh(img, orient='y', sobel_kernel=ksize, thresh=grady_thresh)
     mag_binary = mag_thresh(img, sobel_kernel=ksize, thresh=magni_thresh)
     dir_binary = dir_threshold(img, sobel_kernel=ksize, thresh=dir_thresh)
 
-    # Combine threshold
+    # Combine gradient & color thresholds
+    color_binary = np.dstack((np.zeros_like(dir_binary), dir_binary, dir_binary)) * 255
+    gradient_binary = np.zeros_like(dir_binary)
+    gradient_binary[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
     combined = np.zeros_like(dir_binary)
-    combined[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
+    combined[(gradient_binary == 1) | (hls_binary == 1)] = 1
 
     return combined
 
@@ -243,8 +257,8 @@ def pipeline(img):
 
     ### 2. Gradient threshold ###
     print('Gradient threshold...')
-    gradient = gradient_threshold(undistorted)
-    save_image_transform(img, gradient, True, 'gradient')
+    gradient = color_gradient_threshold(undistorted)
+    save_image_transform(img, gradient, True, 'color_gradient')
 
     ### 2. Region of interest ###
     print('Region of interest...')
@@ -282,6 +296,6 @@ if __name__ == '__main__':
         pickle.dump(calibration_pickle, open(calibration_file, "wb"))
 
     ### Apply pipeline ###
-    img = cv2.imread('./test_images/straight_lines1.jpg')
+    img = cv2.imread('./test_images/test4.jpg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     pipeline(img)
