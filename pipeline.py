@@ -1,9 +1,10 @@
+import os
+import glob
+import pickle
 import cv2
 import numpy as np
-import glob
 import matplotlib.pyplot as plt
-import pickle
-import os
+from moviepy.editor import VideoFileClip
 
 # Parameters for calibration
 mtx = []
@@ -280,6 +281,26 @@ def pipeline(img):
     print('Done!')
     return (warped, Minv, ploty, left_fitx, right_fitx)
 
+def draw_lane(warped, Minv, ploty, left_fitx, right_fitx):
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
+    # Combine the result with the original image
+    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+
+    return result
+
 if __name__ == '__main__':
     ### Camera calibration ###
     if os.path.exists(calibration_file):
@@ -304,22 +325,8 @@ if __name__ == '__main__':
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     warped, Minv, ploty, left_fitx, right_fitx = pipeline(img)
 
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(warped).astype(np.uint8)
-    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
-
-    # Recast the x and y points into usable format for cv2.fillPoly()
-    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-    pts = np.hstack((pts_left, pts_right))
-
-    # Draw the lane onto the warped blank image
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
-
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
-    # Combine the result with the original image
-    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+    # Visualize lane founded back on to the road
+    result = draw_lane(warped, Minv, ploty, left_fitx, right_fitx)
     plt.imshow(result)
     plt.savefig('./output_images/result.jpg')
     plt.show()
