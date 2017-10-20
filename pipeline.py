@@ -146,8 +146,9 @@ def perspective_transform(img):
     # ...to rectangle
     dst = np.float32([[275, 502], [1029, 502], [1029, 668], [275, 668]])
     M = cv2.getPerspectiveTransform(src, dst)
+    Minv = cv2.getPerspectiveTransform(dst, src)
     #Minv = cv2.getPerspectiveTransform(dst, src)
-    return cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+    return (cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR), Minv)
 
 def sliding_windows_polyfit(img):
 
@@ -237,6 +238,8 @@ def sliding_windows_polyfit(img):
     plt.savefig('./output_images/sliding_windows_polyfit.jpg')
     plt.show()
 
+    return (ploty, left_fitx, right_fitx)
+
 def save_image_transform(original, transformed, is_gray, file_name):
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
     ax1.imshow(original)
@@ -267,14 +270,15 @@ def pipeline(img):
 
     ### 3. Perspective transformation ###
     print('Perspective transform...')
-    perspective = perspective_transform(masked_image)
-    save_image_transform(img, perspective, True, 'perspective')
+    warped, Minv = perspective_transform(masked_image)
+    save_image_transform(img, warped, True, 'perspective')
 
     ### 4. Detect lines ###
     print('Sliding windows...')
-    sliding_windows_polyfit(perspective)
+    ploty, left_fitx, right_fitx = sliding_windows_polyfit(warped)
 
     print('Done!')
+    return (warped, Minv, ploty, left_fitx, right_fitx)
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -298,4 +302,24 @@ if __name__ == '__main__':
     ### Apply pipeline ###
     img = cv2.imread('./test_images/test4.jpg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    pipeline(img)
+    warped, Minv, ploty, left_fitx, right_fitx = pipeline(img)
+
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
+    # Combine the result with the original image
+    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+    plt.imshow(result)
+    plt.savefig('./output_images/result.jpg')
+    plt.show()
