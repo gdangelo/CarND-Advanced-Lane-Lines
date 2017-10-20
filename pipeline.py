@@ -232,12 +232,12 @@ def sliding_windows_polyfit(img):
     ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-    plt.plot(left_fitx, ploty, color='yellow')
+    '''plt.plot(left_fitx, ploty, color='yellow')
     plt.plot(right_fitx, ploty, color='yellow')
     plt.xlim(0, 1280)
     plt.ylim(720, 0)
     plt.savefig('./output_images/sliding_windows_polyfit.jpg')
-    plt.show()
+    plt.show()'''
 
     return (ploty, left_fitx, right_fitx)
 
@@ -255,33 +255,19 @@ def save_image_transform(original, transformed, is_gray, file_name):
 
 def pipeline(img):
     ### 1. Distortion correction ###
-    print('Undistort image...')
     undistorted = cv2.undistort(img, mtx, dist, None, mtx)
-    save_image_transform(img, undistorted, False, 'undistorted')
-
     ### 2. Gradient threshold ###
-    print('Gradient threshold...')
     gradient = color_gradient_threshold(undistorted)
-    save_image_transform(img, gradient, True, 'color_gradient')
-
     ### 2. Region of interest ###
-    print('Region of interest...')
     masked_image = region_of_interest(gradient)
-    save_image_transform(img, masked_image, True, 'masked_image')
-
     ### 3. Perspective transformation ###
-    print('Perspective transform...')
     warped, Minv = perspective_transform(masked_image)
-    save_image_transform(img, warped, True, 'perspective')
-
     ### 4. Detect lines ###
-    print('Sliding windows...')
     ploty, left_fitx, right_fitx = sliding_windows_polyfit(warped)
+    ### 5. Visualize lane founded back on to the road ###
+    return draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx)
 
-    print('Done!')
-    return (warped, Minv, ploty, left_fitx, right_fitx)
-
-def draw_lane(warped, Minv, ploty, left_fitx, right_fitx):
+def draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx):
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
@@ -320,13 +306,12 @@ if __name__ == '__main__':
         calibration_pickle["dist"] = dist
         pickle.dump(calibration_pickle, open(calibration_file, "wb"))
 
-    ### Apply pipeline ###
-    img = cv2.imread('./test_images/test4.jpg')
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    warped, Minv, ploty, left_fitx, right_fitx = pipeline(img)
+    # Create directory if it does not exist
+    output_video_dir = "videos_output/"
+    if not os.path.isdir(output_video_dir):
+        os.makedirs(output_video_dir)
 
-    # Visualize lane founded back on to the road
-    result = draw_lane(warped, Minv, ploty, left_fitx, right_fitx)
-    plt.imshow(result)
-    plt.savefig('./output_images/result.jpg')
-    plt.show()
+    video_output = output_video_dir + 'project_video.mp4'
+    video_input = VideoFileClip("project_video.mp4").subclip(0,5)
+    processed_video = video_input.fl_image(pipeline)
+    processed_video.write_videofile(video_output, audio=False)
