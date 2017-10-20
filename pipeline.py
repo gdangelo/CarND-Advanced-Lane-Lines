@@ -239,7 +239,7 @@ def sliding_windows_polyfit(img):
     plt.savefig('./output_images/sliding_windows_polyfit.jpg')
     plt.show()'''
 
-    return (ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty)
+    return (out_img, ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty)
 
 def compute_curvature_radius(img, leftx, rightx, lefty, righty):
     # Define conversions in x and y from pixels space to meters
@@ -275,13 +275,34 @@ def draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx):
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
 
-def draw_data(img, left_curv_radius, right_curv_radius):
+def draw_data(img, polyfit_img, gradient_binary, left_curv_radius, right_curv_radius):
     result = np.copy(img)
+
+    # Take the mean of the left and right riadus
     mean_curv_radius = np.mean([left_curv_radius, right_curv_radius])
+
+    # Add text to the original image
     font = cv2.FONT_HERSHEY_DUPLEX
     text = 'Curve radius: ' + '{:04.2f}'.format(mean_curv_radius) + 'm'
     cv2.putText(result, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
-    return result
+
+    # Add transformed images to the original image
+    mask = np.ones_like(polyfit_img)*255
+    img_1 = cv2.resize(polyfit_img, None, fx=0.3, fy=0.3, interpolation=cv2.INTER_AREA)
+    gradient = np.uint8(np.dstack((gradient_binary, gradient_binary, gradient_binary))*255)
+    img_2 = cv2.resize(gradient, None, fx=0.3, fy=0.3, interpolation=cv2.INTER_AREA)
+
+    offset = 50
+    endy_img_1 = offset+img_1.shape[0]
+    endy_img_2 = endy_img_1+img_2.shape[0]+20
+    starty_img_2 = endy_img_1+20
+    endx = polyfit_img.shape[1]-offset
+    startx = endx-img_1.shape[1]
+
+    mask[offset:endy_img_1, startx:endx] = img_1
+    mask[starty_img_2:endy_img_2, startx:endx] = img_2
+
+    return cv2.bitwise_and(result, mask)
 
 def save_image_transform(original, transformed, is_gray, file_name):
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
@@ -305,12 +326,12 @@ def pipeline(img):
     ### 3. Perspective transformation ###
     warped, Minv = perspective_transform(masked_image)
     ### 4. Detect lines ###
-    ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty = sliding_windows_polyfit(warped)
+    polyfit_image, ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty = sliding_windows_polyfit(warped)
     ### 5. Visualize lane founded back on to the road ###
     lanes = draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx)
     ### 6. Compute radius and display on image
     left_curv_radius, right_curv_radius = compute_curvature_radius(lanes, leftx, rightx, lefty, righty)
-    return draw_data(lanes, left_curv_radius, right_curv_radius)
+    return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius)
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -340,7 +361,7 @@ if __name__ == '__main__':
     video_output_2 = output_video_dir + 'challenge_video.mp4'
 
     print("Run pipeline for '" + video_output_1 + "' video...")
-    video_input = VideoFileClip("project_video.mp4").subclip(0,5)
+    video_input = VideoFileClip("project_video.mp4")
     processed_video = video_input.fl_image(pipeline)
     processed_video.write_videofile(video_output_1, audio=False)
 
