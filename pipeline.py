@@ -239,7 +239,49 @@ def sliding_windows_polyfit(img):
     plt.savefig('./output_images/sliding_windows_polyfit.jpg')
     plt.show()'''
 
-    return (ploty, left_fitx, right_fitx)
+    return (ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty)
+
+def compute_curvature_radius(img, leftx, rightx, lefty, righty):
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+    left_fit = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
+    right_fit = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+
+    # Choose point to compute curvature just in front of the car
+    yvalue = img.shape[0]
+
+    # Compute curvature radius
+    left_curv_radius = ((1 + (2*left_fit[0]*yvalue + left_fit[1])**2)**1.5) / (2*np.absolute(left_fit[0]))
+    right_curv_radius = ((1 + (2*right_fit[0]*yvalue + right_fit[1])**2)**1.5) / (2*np.absolute(right_fit[0]))
+    return (left_curv_radius, right_curv_radius)
+
+def draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx):
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
+    # Combine the result with the original image
+    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+    return result
+
+def draw_data(img, left_curv_radius, right_curv_radius):
+    result = np.copy(img)
+    mean_curv_radius = np.mean([left_curv_radius, right_curv_radius])
+    font = cv2.FONT_HERSHEY_DUPLEX
+    text = 'Curve radius: ' + '{:04.2f}'.format(mean_curv_radius) + 'm'
+    cv2.putText(result, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    return result
 
 def save_image_transform(original, transformed, is_gray, file_name):
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
@@ -263,29 +305,12 @@ def pipeline(img):
     ### 3. Perspective transformation ###
     warped, Minv = perspective_transform(masked_image)
     ### 4. Detect lines ###
-    ploty, left_fitx, right_fitx = sliding_windows_polyfit(warped)
+    ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty = sliding_windows_polyfit(warped)
     ### 5. Visualize lane founded back on to the road ###
-    return draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx)
-
-def draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx):
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(warped).astype(np.uint8)
-    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
-
-    # Recast the x and y points into usable format for cv2.fillPoly()
-    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-    pts = np.hstack((pts_left, pts_right))
-
-    # Draw the lane onto the warped blank image
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
-
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
-    # Combine the result with the original image
-    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
-
-    return result
+    lanes = draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx)
+    ### 6. Compute radius and display on image
+    left_curv_radius, right_curv_radius = compute_curvature_radius(lanes, leftx, rightx, lefty, righty)
+    return draw_data(lanes, left_curv_radius, right_curv_radius)
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -311,7 +336,15 @@ if __name__ == '__main__':
     if not os.path.isdir(output_video_dir):
         os.makedirs(output_video_dir)
 
-    video_output = output_video_dir + 'project_video.mp4'
+    video_output_1 = output_video_dir + 'project_video.mp4'
+    video_output_2 = output_video_dir + 'challenge_video.mp4'
+
+    print("Run pipeline for '" + video_output_1 + "' video...")
     video_input = VideoFileClip("project_video.mp4").subclip(0,5)
     processed_video = video_input.fl_image(pipeline)
-    processed_video.write_videofile(video_output, audio=False)
+    processed_video.write_videofile(video_output_1, audio=False)
+
+    print("Run pipeline for '" + video_output_2 + "' video...")
+    video_input = VideoFileClip("project_video.mp4")
+    processed_video = video_input.fl_image(pipeline)
+    processed_video.write_videofile(video_output_2, audio=False)
