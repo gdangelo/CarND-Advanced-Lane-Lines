@@ -100,6 +100,32 @@ def gradient_threshold(img):
 
     return combined
 
+def region_of_interest(img):
+    # Set vertices for the mask
+    imshape = img.shape # x: imshape[1], y: imshape[0]
+    left_bottom = (0.15*imshape[1], imshape[0])
+    left_top = (0.45*imshape[1], 0.6*imshape[0])
+    right_top = (0.60*imshape[1], 0.6*imshape[0])
+    right_bottom = (0.9*imshape[1], imshape[0])
+    vertices = np.array([[left_bottom, left_top, right_top, right_bottom]], dtype=np.int32)
+
+    # Define blank mask to start with
+    mask = np.zeros_like(img)
+
+    # Define a 3 channel or 1 channel color to fill the mask with depending on the input image
+    if len(img.shape) > 2:
+        channel_count = img.shape[2]  # i.e. 3 or 4 depending on the image
+        ignore_mask_color = (255,) * channel_count
+    else:
+        ignore_mask_color = 255
+
+    # Fill pixels inside the polygon defined by "vertices" with the fill color
+    cv2.fillPoly(mask, vertices, ignore_mask_color)
+
+    # Return the image only where mask pixels are nonzero
+    masked_image = cv2.bitwise_and(img, mask)
+    return masked_image
+
 def perspective_transform(img):
     # From trapezoidale shape on straight lines...
     src = np.float32([[519, 502], [765, 502], [1029, 668], [275, 668]])
@@ -110,7 +136,7 @@ def perspective_transform(img):
     return cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR)
 
 def sliding_windows_polyfit(img):
-  
+
     # Compute the histogram of the lower half image. It gives us the 2 pics where the lanes are located.
     histogram = np.sum(img[int(img.shape[0]/2):,:], axis=0)
     # Create an output image to draw on and visualize the result
@@ -138,7 +164,7 @@ def sliding_windows_polyfit(img):
     # Create empty lists to receive left and right lane pixel indices
     left_lane_inds = []
     right_lane_inds = []
-    
+
     # Step through the windows one by one
     for window in range(n_windows):
         # Compute the windows boundaries
@@ -216,16 +242,22 @@ def pipeline(img):
     save_image_transform(img, undistorted, False, 'undistorted')
 
     ### 2. Gradient threshold ###
-    print('Apply gradient threshold...')
+    print('Gradient threshold...')
     gradient = gradient_threshold(undistorted)
     save_image_transform(img, gradient, True, 'gradient')
 
+    ### 2. Region of interest ###
+    print('Region of interest...')
+    masked_image = region_of_interest(gradient)
+    save_image_transform(img, masked_image, True, 'masked_image')
+
     ### 3. Perspective transformation ###
-    print('Apply perspective transform...')
-    perspective = perspective_transform(gradient)
+    print('Perspective transform...')
+    perspective = perspective_transform(masked_image)
     save_image_transform(img, perspective, True, 'perspective')
 
     ### 4. Detect lines ###
+    print('Sliding windows...')
     sliding_windows_polyfit(perspective)
 
     print('Done!')
