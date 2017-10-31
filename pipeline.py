@@ -151,63 +151,87 @@ def perspective_transform(img):
     #Minv = cv2.getPerspectiveTransform(dst, src)
     return (cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR), Minv)
 
-def sliding_windows_polyfit(img):
+def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None):
 
-    # Compute the histogram of the lower half image. It gives us the 2 pics where the lanes are located.
-    histogram = np.sum(img[int(img.shape[0]/2):,:], axis=0)
     # Create an output image to draw on and visualize the result
     out_img = np.uint8(np.dstack((img, img, img))*255)
-    # Separate the left part of the histogram from the right one. This is our starting point.
-    midpoint = np.int(histogram.shape[0]/2)
-    leftx_base = np.argmax(histogram[:midpoint])
-    rightx_base =  np.argmax(histogram[midpoint:]) + midpoint
 
-    # Split the image in 9 horizontal strips
-    n_windows = 9
-    # Set height of windows
-    window_height = int(img.shape[0]/n_windows)
-    # Set the width of the windows +/- margin
-    margin = 100
-    # Set minimum number of pixels found to recenter window
-    minpix = 50
     # Get indices of all nonzero pixels along x and y axis
     nonzero = img.nonzero()
     nonzerox = np.array(nonzero[1])
     nonzeroy = np.array(nonzero[0])
-    # Current positions to be updated for each window
-    leftx_current = leftx_base
-    rightx_current = rightx_base
+
+    # Set margin for searching
+    margin = 100
+    
     # Create empty lists to receive left and right lane pixel indices
     left_lane_inds = []
     right_lane_inds = []
 
-    # Step through the windows one by one
-    for window in range(n_windows):
+    # Look for lines from scratch ('blind search')
+    if (previous_left_fit is None or previous_right_fit is None):
+        # Compute the histogram of the lower half image. It gives us the 2 pics where the lanes are located.
+        histogram = np.sum(img[int(img.shape[0]/2):,:], axis=0)
+        # Separate the left part of the histogram from the right one. This is our starting point.
+        midpoint = np.int(histogram.shape[0]/2)
+        leftx_base = np.argmax(histogram[:midpoint])
+        rightx_base =  np.argmax(histogram[midpoint:]) + midpoint
+
+        # Split the image in 9 horizontal strips
+        n_windows = 9
+        # Set height of windows
+        window_height = int(img.shape[0]/n_windows)
+        # Set minimum number of pixels found to recenter window
+        minpix = 50
+        
+        # Current positions to be updated for each window
+        leftx_current = leftx_base
+        rightx_current = rightx_base
+
+        # Step through the windows one by one
+        for window in range(n_windows):
+            # Compute the windows boundaries
+            win_y_low = img.shape[0] - (window+1)*window_height
+            win_y_high = img.shape[0] - window*window_height
+            win_leftx_low = leftx_current - margin
+            win_leftx_high = leftx_current + margin
+            win_rightx_low = rightx_current - margin
+            win_rightx_high = rightx_current + margin
+
+            # Draw the windows on the visualization image
+            cv2.rectangle(out_img, (win_leftx_low,win_y_low), (win_leftx_high,win_y_high), (0,255,0), 2)
+            cv2.rectangle(out_img, (win_rightx_low,win_y_low), (win_rightx_high,win_y_high), (0,255,0), 2)
+
+            # Identify non zero pixels within left and right windows
+            good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_leftx_low) & (nonzerox < win_leftx_high)).nonzero()[0]
+            good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_rightx_low) & (nonzerox < win_rightx_high)).nonzero()[0]
+
+            # Append these indices to the lists
+            left_lane_inds.append(good_left_inds)
+            right_lane_inds.append(good_right_inds)
+
+            # If non zeros pixels > minpix, recenter the next window on their mean
+            if (len(good_left_inds) > minpix):
+                leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
+            if (len(good_right_inds) > minpix):
+                rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
+
+    # Use last polynomial fit
+    else:
         # Compute the windows boundaries
-        win_y_low = img.shape[0] - (window+1)*window_height
-        win_y_high = img.shape[0] - window*window_height
-        win_leftx_low = leftx_current - margin
-        win_leftx_high = leftx_current + margin
-        win_rightx_low = rightx_current - margin
-        win_rightx_high = rightx_current + margin
-
-        # Draw the windows on the visualization image
-        cv2.rectangle(out_img, (win_leftx_low,win_y_low), (win_leftx_high,win_y_high), (0,255,0), 2)
-        cv2.rectangle(out_img, (win_rightx_low,win_y_low), (win_rightx_high,win_y_high), (0,255,0), 2)
-
+        previous_left_x = previous_left_fit[0]*nonzeroy**2 + previous_left_fit[1]*nonzeroy + previous_left_fit[2]
+        win_leftx_low = previous_left_x - margin
+        win_leftx_high =  previous_left_x + margin
+        previous_right_x = previous_right_fit[0]*nonzeroy**2 + previous_right_fit[1]*nonzeroy + previous_right_fit[2]
+        win_rightx_low = previous_right_x - margin
+        win_rightx_high =  previous_right_x + margin
         # Identify non zero pixels within left and right windows
-        good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_leftx_low) & (nonzerox < win_leftx_high)).nonzero()[0]
-        good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_rightx_low) & (nonzerox < win_rightx_high)).nonzero()[0]
+        good_left_inds = ((nonzerox >= win_leftx_low) & (nonzerox < win_leftx_high)).nonzero()[0]
+        good_right_inds = ((nonzerox >= win_rightx_low) & (nonzerox < win_rightx_high)).nonzero()[0]
 
         # Append these indices to the lists
         left_lane_inds.append(good_left_inds)
         right_lane_inds.append(good_right_inds)
-
-        # If non zeros pixels > minpix, recenter the next window on their mean
-        if (len(good_left_inds) > minpix):
-            leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
-        if (len(good_right_inds) > minpix):
-            rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
 
     # Concatenate the arrays of indices
     left_lane_inds = np.concatenate(left_lane_inds)
@@ -223,23 +247,7 @@ def sliding_windows_polyfit(img):
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
 
-    # Display left line in red, and right line in blue
-    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-    plt.imshow(out_img)
-
-    # Generate x and y values for plotting
-    ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-    '''plt.plot(left_fitx, ploty, color='yellow')
-    plt.plot(right_fitx, ploty, color='yellow')
-    plt.xlim(0, 1280)
-    plt.ylim(720, 0)
-    plt.savefig('./output_images/sliding_windows_polyfit.jpg')
-    plt.show()'''
-
-    return (out_img, ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty)
+    return (out_img, left_fit, right_fit)
 
 def compute_curvature_radius(img, leftx, rightx, lefty, righty):
     # Define conversions in x and y from pixels space to meters
@@ -256,7 +264,12 @@ def compute_curvature_radius(img, leftx, rightx, lefty, righty):
     right_curv_radius = ((1 + (2*right_fit[0]*yvalue + right_fit[1])**2)**1.5) / (2*np.absolute(right_fit[0]))
     return (left_curv_radius, right_curv_radius)
 
-def draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx):
+def draw_lane(img, warped, Minv, left_fit, right_fit):
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
@@ -315,23 +328,63 @@ def save_image_transform(original, transformed, is_gray, file_name):
     ax2.set_title('Result Image', fontsize=30)
     plt.savefig('./output_images/' + file_name + '.jpg')
     plt.show()
+    
+class Line:
+    def __init__(self, max_lines=5):
+        # Was the line detected in the last iteration?
+        self.detected = False  
+        # Max number of last lines
+        self.max_lines = max_lines
+        # Polynomial coefficients for the most recent fit
+        self.recent_fit = []
+        # Polynomial coefficients averaged over the last n iterations
+        self.best_fit = None
 
-def pipeline(img):
-    ### 1. Distortion correction ###
-    undistorted = cv2.undistort(img, mtx, dist, None, mtx)
-    ### 2. Gradient threshold ###
-    gradient = color_gradient_threshold(undistorted)
-    ### 2. Region of interest ###
-    masked_image = region_of_interest(gradient)
-    ### 3. Perspective transformation ###
-    warped, Minv = perspective_transform(masked_image)
-    ### 4. Detect lines ###
-    polyfit_image, ploty, left_fitx, right_fitx, leftx, rightx, lefty, righty = sliding_windows_polyfit(warped)
-    ### 5. Visualize lane founded back on to the road ###
-    lanes = draw_lane(img, warped, Minv, ploty, left_fitx, right_fitx)
-    ### 6. Compute radius and display on image
-    left_curv_radius, right_curv_radius = compute_curvature_radius(lanes, leftx, rightx, lefty, righty)
-    return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius)
+    def reset(self):
+        del self.recent_fit[:]
+
+    def store_lines(self, left_fit, right_fit):
+        if (left_fit is None or right_fit is None):
+            self.detected = False
+            # Remove the oldest fit from the history
+            self.recent_fit.pop(0)
+        else:
+            self.detected = True
+            if (len(self.recent_fit) == self.max_lines):
+                # Remove the oldest fit from the history
+                self.recent_fit.pop(0)
+            # Add the new lines
+            self.recent_fit.append((left_fit, right_fit))
+
+        # Update best fit
+        self.best_fit = np.average(self.recent_fit, axis=0)
+
+    def process_img(self, img):
+        ### 1. Distortion correction ###
+        undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+
+        ### 2. Gradient threshold ###
+        gradient = color_gradient_threshold(undistorted)
+
+        ### 2. Region of interest ###
+        masked_image = region_of_interest(gradient)
+
+        ### 3. Perspective transformation ###
+        warped, Minv = perspective_transform(masked_image)
+
+        ### 4. Detect lines and store it ###
+        if (self.detected):
+            polyfit_image, left_fit, righ_fit = sliding_windows_polyfit(warped, self.best_fit[0], self.best_fit[1])
+        else:
+            polyfit_image, left_fit, righ_fit = sliding_windows_polyfit(warped)
+        self.store_lines(left_fit, righ_fit)
+
+        ### 5. Visualize lane found back on to the road ###
+        return draw_lane(img, warped, Minv, left_fit, righ_fit)
+
+        ### 6. Compute radius and display on image
+        left_curv_radius, right_curv_radius = compute_curvature_radius(lanes, leftx, rightx, lefty, righty)
+        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius)
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -360,12 +413,13 @@ if __name__ == '__main__':
     video_output_1 = output_video_dir + 'project_video.mp4'
     video_output_2 = output_video_dir + 'challenge_video.mp4'
 
-    print("Run pipeline for '" + video_output_1 + "' video...")
-    video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(pipeline)
+    print("Run pipeline for '" + video_output_1 + "'...")
+    line = Line()
+    video_input = VideoFileClip("project_video.mp4").subclip(0,10)
+    processed_video = video_input.fl_image(line.process_img)
     processed_video.write_videofile(video_output_1, audio=False)
 
-    print("Run pipeline for '" + video_output_2 + "' video...")
+    '''print("Run pipeline for '" + video_output_2 + "'...")
     video_input = VideoFileClip("project_video.mp4")
     processed_video = video_input.fl_image(pipeline)
-    processed_video.write_videofile(video_output_2, audio=False)
+    processed_video.write_videofile(video_output_2, audio=False)'''
