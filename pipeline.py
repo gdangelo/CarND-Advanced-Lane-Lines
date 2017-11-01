@@ -280,7 +280,13 @@ def compute_curvature_radius(img, left_fit, right_fit, left_lane_inds, right_lan
     lane_center = ((left_fit[0]*yvalue**2 + left_fit[1]*yvalue + left_fit[2]) + (right_fit[0]*yvalue**2 + right_fit[1]*yvalue + right_fit[2])) / 2
     center_dist = (lane_center - car_center) * xm_per_pix
 
-    return (left_curv_radius, right_curv_radius, center_dist)
+    # Compute lane width
+    yvalue = img.shape[0]
+    leftx = left_fit[0]*yvalue**2 + left_fit[1]*yvalue + left_fit[2]
+    rightx = right_fit[0]*yvalue**2 + right_fit[1]*yvalue + right_fit[2]
+    lane_width = abs(leftx - rightx) * xm_per_pix
+
+    return (left_curv_radius, right_curv_radius, center_dist, lane_width)
 
 def draw_lane(img, warped, Minv, left_fit, right_fit):
     # Generate x and y values for plotting
@@ -306,23 +312,27 @@ def draw_lane(img, warped, Minv, left_fit, right_fit):
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
 
-def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist, is_tracking):
+def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist, lane_width, is_tracking):
     result = np.copy(img)
 
     # Add text to the original image
     font = cv2.FONT_HERSHEY_DUPLEX
     text = 'Left radius curvature: ' + '{:04.2f}'.format(left_curv_radius) + 'm'
     cv2.putText(result, text, (50, 70), font, 1, (255,255,255), 2, cv2.LINE_AA)
+
     text = 'Right radius curvature: ' + '{:04.2f}'.format(right_curv_radius) + 'm'
     cv2.putText(result, text, (50, 100), font, 1, (255,255,255), 2, cv2.LINE_AA)
+
+    text = 'Lane width: ' + '{:04.2f}'.format(lane_width) + 'm'
+    cv2.putText(result, text, (50, 130), font, 1, (255,255,255), 2, cv2.LINE_AA)
 
     if center_dist > 0:
         text = 'Vehicule position: {:04.2f}'.format(center_dist) + 'm left of center'
     else:
         text = 'Vehicule position: {:04.2f}'.format(center_dist) + 'm right of center'
-    cv2.putText(result, text, (50, 130), font, 1, (255,255,255), 2, cv2.LINE_AA)
+    cv2.putText(result, text, (50, 160), font, 1, (255,255,255), 2, cv2.LINE_AA)
 
-    cv2.putText(result, 'Tracking Locked' if is_tracking else 'Tracking Lost', (50, 160), font, 1, (0,255,0) if is_tracking else (255,0,0), 2, cv2.LINE_AA)
+    cv2.putText(result, 'Tracking Locked' if is_tracking else 'Tracking Lost', (50, 190), font, 1, (0,255,0) if is_tracking else (255,0,0), 2, cv2.LINE_AA)
 
     # Add transformed images to the original image
     mask = np.ones_like(top_img)*255
@@ -330,6 +340,7 @@ def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, cen
     bottom_img_3_channels = np.uint8(np.dstack((bottom_img, bottom_img, bottom_img))*255)
     img_2 = cv2.resize(bottom_img_3_channels, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
 
+    offset = 50
     endy_img_1 = offset+img_1.shape[0]
     endy_img_2 = endy_img_1+img_2.shape[0]+20
     starty_img_2 = endy_img_1+20
@@ -363,17 +374,31 @@ class Line:
         self.recent_fit = []
         # Polynomial coefficients averaged over the last n iterations
         self.best_fit = None
+        # Radius of curvature of the lines
+        self.radius_of_curvature = None
 
     def reset(self):
         del self.recent_fit[:]
         self.best_fit = None
         self.detected = False
+        self.radius_of_curvature = None
 
-    def store_lines(self, left_fit, right_fit):
-        if (left_fit is None or right_fit is None):
-            self.detected = False
-            # Remove the oldest fit from the history
-            self.recent_fit.pop(0)
+    def sanity_check(self, left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width):
+        # Check that both lines have similar curvature
+        if abs(left_curv_radius - right_curv_radius) > 1000:
+            return False
+        # Check that both lines are separated by approximately the right distance horizontally
+        if abs(3.7 - lane_width) > 0.5:
+            return False
+
+        return True
+
+    def update_lines(self, left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width):
+        # Lines haven't been detected or the detection doesn't make sense --> reset hsitory
+        is_detection_ok = self.sanity_check(left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width) == True
+        if (left_fit is None or right_fit is None or not is_detection_ok):
+            self.reset()
+        # Update history with the current detection
         else:
             self.detected = True
             if (len(self.recent_fit) == self.max_lines):
@@ -381,9 +406,9 @@ class Line:
                 self.recent_fit.pop(0)
             # Add the new lines
             self.recent_fit.append((left_fit, right_fit))
-
-        # Update best fit
-        self.best_fit = np.average(self.recent_fit, axis=0)
+            self.radius_of_curvature = (left_curv_radius, right_curv_radius)
+            # Update best fit
+            self.best_fit = np.average(self.recent_fit, axis=0)
 
     def process_img(self, img):
         ### 1. Distortion correction ###
@@ -395,19 +420,20 @@ class Line:
         ### 2. Gradient threshold ###
         gradient = color_gradient_threshold(warped)
 
-        ### 4. Detect lines and store it ###
+        ### 4. Detect lines ###
         if (self.detected):
             polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
         else:
             polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient)
-        self.store_lines(left_fit, right_fit)
 
         ### 5. Visualize lane found back on to the road ###
         lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
 
-        ### 6. Compute radius and display on image
-        left_curv_radius, right_curv_radius, center_dist = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
-        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, self.detected == True)
+        ### 6. Compute radius and display on image ###
+        left_curv_radius, right_curv_radius, center_dist, lane_width = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
+        self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width)
+
+        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, lane_width, self.detected == True)
 
 if __name__ == '__main__':
     ### Camera calibration ###
