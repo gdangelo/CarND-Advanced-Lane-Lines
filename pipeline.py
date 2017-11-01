@@ -83,7 +83,7 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
     abs_sobelx = np.absolute(sobelx)
     abs_sobely = np.absolute(sobely)
-    direction = np.arctan2(abs_sobely, abs_sobely)
+    direction = np.arctan2(abs_sobely, abs_sobelx)
     # Apply threshold
     dir_binary = np.zeros_like(direction)
     dir_binary[(direction >= thresh[0]) & (direction <= thresh[1])] = 1
