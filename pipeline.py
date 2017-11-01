@@ -306,21 +306,23 @@ def draw_lane(img, warped, Minv, left_fit, right_fit):
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
 
-def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist):
+def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist, is_tracking):
     result = np.copy(img)
-
-    # Take the mean of the left and right riadus
-    mean_curv_radius = np.mean([left_curv_radius, right_curv_radius])
 
     # Add text to the original image
     font = cv2.FONT_HERSHEY_DUPLEX
-    text = 'Curve radius: ' + '{:04.2f}'.format(mean_curv_radius) + 'm'
-    cv2.putText(result, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    text = 'Left radius curvature: ' + '{:04.2f}'.format(left_curv_radius) + 'm'
+    cv2.putText(result, text, (50, 70), font, 1, (255,255,255), 2, cv2.LINE_AA)
+    text = 'Right radius curvature: ' + '{:04.2f}'.format(right_curv_radius) + 'm'
+    cv2.putText(result, text, (50, 100), font, 1, (255,255,255), 2, cv2.LINE_AA)
+
     if center_dist > 0:
-        text = '{:04.2f}'.format(center_dist) + 'm left from the center'
+        text = 'Vehicule position: {:04.2f}'.format(center_dist) + 'm left of center'
     else:
-        text = '{:04.2f}'.format(center_dist) + 'm right from the center'
-    cv2.putText(result, text, (40,120), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+        text = 'Vehicule position: {:04.2f}'.format(center_dist) + 'm right of center'
+    cv2.putText(result, text, (50, 130), font, 1, (255,255,255), 2, cv2.LINE_AA)
+
+    cv2.putText(result, 'Tracking Locked' if is_tracking else 'Tracking Lost', (50, 160), font, 1, (0,255,0) if is_tracking else (255,0,0), 2, cv2.LINE_AA)
 
     # Add transformed images to the original image
     mask = np.ones_like(top_img)*255
@@ -328,7 +330,6 @@ def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, cen
     bottom_img_3_channels = np.uint8(np.dstack((bottom_img, bottom_img, bottom_img))*255)
     img_2 = cv2.resize(bottom_img_3_channels, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
 
-    offset = 50
     endy_img_1 = offset+img_1.shape[0]
     endy_img_2 = endy_img_1+img_2.shape[0]+20
     starty_img_2 = endy_img_1+20
@@ -406,7 +407,7 @@ class Line:
 
         ### 6. Compute radius and display on image
         left_curv_radius, right_curv_radius, center_dist = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
-        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist)
+        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, self.detected == True)
 
 if __name__ == '__main__':
     ### Camera calibration ###
