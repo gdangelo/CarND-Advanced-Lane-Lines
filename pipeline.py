@@ -153,17 +153,12 @@ def perspective_transform(img):
 
 def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None):
 
-    # Create an output image to draw on and visualize the result
-    out_img = np.uint8(np.dstack((img, img, img))*255)
-
     # Get indices of all nonzero pixels along x and y axis
     nonzero = img.nonzero()
     nonzerox = np.array(nonzero[1])
     nonzeroy = np.array(nonzero[0])
-
     # Set margin for searching
     margin = 100
-    
     # Create empty lists to receive left and right lane pixel indices
     left_lane_inds = []
     right_lane_inds = []
@@ -183,7 +178,7 @@ def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None
         window_height = int(img.shape[0]/n_windows)
         # Set minimum number of pixels found to recenter window
         minpix = 50
-        
+
         # Current positions to be updated for each window
         leftx_current = leftx_base
         rightx_current = rightx_base
@@ -198,10 +193,6 @@ def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None
             win_rightx_low = rightx_current - margin
             win_rightx_high = rightx_current + margin
 
-            # Draw the windows on the visualization image
-            cv2.rectangle(out_img, (win_leftx_low,win_y_low), (win_leftx_high,win_y_high), (0,255,0), 2)
-            cv2.rectangle(out_img, (win_rightx_low,win_y_low), (win_rightx_high,win_y_high), (0,255,0), 2)
-
             # Identify non zero pixels within left and right windows
             good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_leftx_low) & (nonzerox < win_leftx_high)).nonzero()[0]
             good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_rightx_low) & (nonzerox < win_rightx_high)).nonzero()[0]
@@ -215,7 +206,6 @@ def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None
                 leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
             if (len(good_right_inds) > minpix):
                 rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
-
     # Use last polynomial fit
     else:
         # Compute the windows boundaries
@@ -247,22 +237,76 @@ def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
 
-    return (out_img, left_fit, right_fit)
+    out_img = visualize_searching(img, nonzerox, nonzeroy, left_fit, right_fit, margin, left_lane_inds, right_lane_inds)
 
-def compute_curvature_radius(img, leftx, rightx, lefty, righty):
+    return (out_img, left_fit, right_fit, left_lane_inds, right_lane_inds)
+
+def visualize_searching(img, nonzerox, nonzeroy, left_fit, right_fit, margin, left_lane_inds, right_lane_inds):
+    # Create an output image to draw on and visualize the result
+    out_img = np.uint8(np.dstack((img, img, img))*255)
+    window_img = np.zeros_like(out_img)
+
+    # Color left and right line pixels
+    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+    # Generate a polygon to illustrate the search window area
+    # And recast the x and y points into usable format for cv2.fillPoly()
+    left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-margin, ploty]))])
+    left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx+margin, ploty])))])
+    left_line_pts = np.hstack((left_line_window1, left_line_window2))
+    right_line_window1 = np.array([np.transpose(np.vstack([right_fitx-margin, ploty]))])
+    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+margin, ploty])))])
+    right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
+    cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
+    result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+    '''plt.imshow(result)
+    plt.plot(left_fitx, ploty, color='yellow')
+    plt.plot(right_fitx, ploty, color='yellow')
+    plt.xlim(0, 1280)
+    plt.ylim(720, 0)'''
+
+    return result
+
+def compute_curvature_radius(img, left_fit, right_fit, left_lane_inds, right_lane_inds):
+    # Get indices of all nonzero pixels along x and y axis
+    nonzero = img.nonzero()
+    nonzerox = np.array(nonzero[1])
+    nonzeroy = np.array(nonzero[0])
+
+    # Extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    rightx = nonzerox[right_lane_inds]
+    lefty = nonzeroy[left_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30/720 # meters per pixel in y dimension
     xm_per_pix = 3.7/700 # meters per pixel in x dimension
-    left_fit = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
-    right_fit = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+    left_fit_converted = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
+    right_fit_converted = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
 
     # Choose point to compute curvature just in front of the car
     yvalue = img.shape[0]
 
     # Compute curvature radius
-    left_curv_radius = ((1 + (2*left_fit[0]*yvalue + left_fit[1])**2)**1.5) / (2*np.absolute(left_fit[0]))
-    right_curv_radius = ((1 + (2*right_fit[0]*yvalue + right_fit[1])**2)**1.5) / (2*np.absolute(right_fit[0]))
-    return (left_curv_radius, right_curv_radius)
+    left_curv_radius = ((1 + (2*left_fit_converted[0]*yvalue + left_fit_converted[1])**2)**1.5) / (2*np.absolute(left_fit_converted[0]))
+    right_curv_radius = ((1 + (2*right_fit_converted[0]*yvalue + right_fit_converted[1])**2)**1.5) / (2*np.absolute(right_fit_converted[0]))
+
+    # Compute distance in meters of vehicle center from the line
+    car_center = img.shape[1]/2  # we assume the camera is centered in the car
+    lane_center = ((left_fit[0]*yvalue**2 + left_fit[1]*yvalue + left_fit[2]) + (right_fit[0]*yvalue**2 + right_fit[1]*yvalue + right_fit[2])) / 2
+    center_dist = (lane_center - car_center) * xm_per_pix
+
+    return (left_curv_radius, right_curv_radius, center_dist)
 
 def draw_lane(img, warped, Minv, left_fit, right_fit):
     # Generate x and y values for plotting
@@ -288,7 +332,7 @@ def draw_lane(img, warped, Minv, left_fit, right_fit):
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
 
-def draw_data(img, polyfit_img, gradient_binary, left_curv_radius, right_curv_radius):
+def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist):
     result = np.copy(img)
 
     # Take the mean of the left and right riadus
@@ -298,24 +342,29 @@ def draw_data(img, polyfit_img, gradient_binary, left_curv_radius, right_curv_ra
     font = cv2.FONT_HERSHEY_DUPLEX
     text = 'Curve radius: ' + '{:04.2f}'.format(mean_curv_radius) + 'm'
     cv2.putText(result, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+    if center_dist > 0:
+        text = '{:04.2f}'.format(center_dist) + 'm left from the center'
+    else:
+        text = '{:04.2f}'.format(center_dist) + 'm right from the center'
+    cv2.putText(result, text, (40,120), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
 
     # Add transformed images to the original image
-    mask = np.ones_like(polyfit_img)*255
-    img_1 = cv2.resize(polyfit_img, None, fx=0.3, fy=0.3, interpolation=cv2.INTER_AREA)
-    gradient = np.uint8(np.dstack((gradient_binary, gradient_binary, gradient_binary))*255)
-    img_2 = cv2.resize(gradient, None, fx=0.3, fy=0.3, interpolation=cv2.INTER_AREA)
+    mask = np.ones_like(top_img)*255
+    img_1 = cv2.resize(top_img, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
+    bottom_img_3_channels = np.uint8(np.dstack((bottom_img, bottom_img, bottom_img))*255)
+    img_2 = cv2.resize(bottom_img_3_channels, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
 
     offset = 50
     endy_img_1 = offset+img_1.shape[0]
     endy_img_2 = endy_img_1+img_2.shape[0]+20
     starty_img_2 = endy_img_1+20
-    endx = polyfit_img.shape[1]-offset
+    endx = top_img.shape[1]-offset
     startx = endx-img_1.shape[1]
 
-    mask[offset:endy_img_1, startx:endx] = img_1
-    mask[starty_img_2:endy_img_2, startx:endx] = img_2
+    result[offset:endy_img_1, startx:endx] = img_1
+    result[starty_img_2:endy_img_2, startx:endx] = img_2
 
-    return cv2.bitwise_and(result, mask)
+    return result
 
 def save_image_transform(original, transformed, is_gray, file_name):
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
@@ -328,11 +377,11 @@ def save_image_transform(original, transformed, is_gray, file_name):
     ax2.set_title('Result Image', fontsize=30)
     plt.savefig('./output_images/' + file_name + '.jpg')
     plt.show()
-    
+
 class Line:
     def __init__(self, max_lines=5):
         # Was the line detected in the last iteration?
-        self.detected = False  
+        self.detected = False
         # Max number of last lines
         self.max_lines = max_lines
         # Polynomial coefficients for the most recent fit
@@ -342,6 +391,8 @@ class Line:
 
     def reset(self):
         del self.recent_fit[:]
+        self.best_fit = None
+        self.detected = False
 
     def store_lines(self, left_fit, right_fit):
         if (left_fit is None or right_fit is None):
@@ -374,17 +425,17 @@ class Line:
 
         ### 4. Detect lines and store it ###
         if (self.detected):
-            polyfit_image, left_fit, righ_fit = sliding_windows_polyfit(warped, self.best_fit[0], self.best_fit[1])
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(warped, self.best_fit[0], self.best_fit[1])
         else:
-            polyfit_image, left_fit, righ_fit = sliding_windows_polyfit(warped)
-        self.store_lines(left_fit, righ_fit)
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(warped)
+        self.store_lines(left_fit, right_fit)
 
         ### 5. Visualize lane found back on to the road ###
-        return draw_lane(img, warped, Minv, left_fit, righ_fit)
+        lanes = draw_lane(img, warped, Minv, left_fit, right_fit)
 
         ### 6. Compute radius and display on image
-        left_curv_radius, right_curv_radius = compute_curvature_radius(lanes, leftx, rightx, lefty, righty)
-        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius)
+        left_curv_radius, right_curv_radius, center_dist = compute_curvature_radius(warped, left_fit, right_fit, left_lane_inds, right_lane_inds)
+        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist)
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -415,7 +466,7 @@ if __name__ == '__main__':
 
     print("Run pipeline for '" + video_output_1 + "'...")
     line = Line()
-    video_input = VideoFileClip("project_video.mp4").subclip(0,10)
+    video_input = VideoFileClip("project_video.mp4").subclip(0,2)
     processed_video = video_input.fl_image(line.process_img)
     processed_video.write_videofile(video_output_1, audio=False)
 
