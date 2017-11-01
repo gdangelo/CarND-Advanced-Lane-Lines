@@ -17,7 +17,7 @@ gradx_thresh = (25, 255)
 grady_thresh = (25, 255)
 magni_thresh = (25, 255)
 dir_thresh = (0., 0.09)
-hls_thresh = (125, 255)
+hls_thresh = (110, 255)
 
 def get_points_for_calibration(nx, ny):
     # Prepare object points
@@ -115,11 +115,38 @@ def color_gradient_threshold(img):
 
     return combined
 
+def region_of_interest(img):
+    # Set vertices for the mask
+    imshape = img.shape # x: imshape[1], y: imshape[0]
+    left_bottom = (0.1*imshape[1], 0.95*imshape[0])
+    left_top = (0.1*imshape[1], 0.1*imshape[0])
+    right_top = (0.7*imshape[1], 0.1*imshape[0])
+    right_bottom = (0.7*imshape[1], 0.95*imshape[0])
+    vertices = np.array([[left_bottom, left_top, right_top, right_bottom]], dtype=np.int32)
+
+    # Define blank mask to start with
+    mask = np.zeros_like(img)
+
+    # Define a 3 channel or 1 channel color to fill the mask with depending on the input image
+    if len(img.shape) > 2:
+        channel_count = img.shape[2]  # i.e. 3 or 4 depending on the image
+        ignore_mask_color = (255,) * channel_count
+    else:
+        ignore_mask_color = 255
+
+    # Fill pixels inside the polygon defined by "vertices" with the fill color
+    cv2.fillPoly(mask, vertices, ignore_mask_color)
+
+    # Return the image only where mask pixels are nonzero
+    masked_image = cv2.bitwise_and(img, mask)
+    return masked_image
+
 def perspective_transform(img):
+    h,w = img.shape[:2]
     # From trapezoidale shape on straight lines...
-    src = np.float32([[519, 502], [765, 502], [1029, 668], [275, 668]])
+    src = np.float32([(575,464), (707,464), (258,682), (1049,682)])
     # ...to rectangle
-    dst = np.float32([[275, 502], [1029, 502], [1029, 668], [275, 668]])
+    dst = np.float32([(450,0), (w-450,0), (450,h), (w-450,h)])
     M = cv2.getPerspectiveTransform(src, dst)
     Minv = cv2.getPerspectiveTransform(dst, src)
     #Minv = cv2.getPerspectiveTransform(dst, src)
@@ -372,6 +399,8 @@ class Line:
     def __init__(self, max_lines=5):
         # Was the line detected in the last iteration?
         self.detected = False
+        # Number of failed detection
+        self.failures = 0
         # Max number of last lines
         self.max_lines = max_lines
         # Polynomial coefficients for the most recent fit
@@ -380,12 +409,19 @@ class Line:
         self.best_fit = None
         # Radius of curvature of the lines
         self.radius_of_curvature = None
+        # Distance in meters of vehicle center from the line
+        self.center_dist = 0
+        # Lane width
+        self.lane_width = 0
 
     def reset(self):
         del self.recent_fit[:]
         self.best_fit = None
         self.detected = False
+        self.failures = 0
         self.radius_of_curvature = None
+        self.center_dist = 0
+        self.lane_width = 0
 
     def sanity_check(self, left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width):
         # Check that both lines have similar curvature
@@ -394,7 +430,7 @@ class Line:
 
         # Check that both lines are separated by approximately the right distance horizontally
         lane_width = (top_lane_width + bottom_lane_width) / 2
-        if abs(3.7 - lane_width) > 0.5:
+        if abs(2.0 - lane_width) > 0.5:
             return False
 
         # Check that both lines are roughly parallel
@@ -403,15 +439,11 @@ class Line:
 
         return True
 
-    def update_lines(self, left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width):
-        # Lines haven't been detected or the detection doesn't make sense --> reset hsitory
+    def update_lines(self, left_fit, right_fit, left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width):
         is_detection_ok = self.sanity_check(left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width) == True
-        if (left_fit is None or right_fit is None or not is_detection_ok):
-            self.reset()
-            return False
 
         # Update history with the current detection
-        else:
+        if (left_fit is not None and right_fit is not None and is_detection_ok):
             self.detected = True
             if (len(self.recent_fit) == self.max_lines):
                 # Remove the oldest fit from the history
@@ -419,35 +451,54 @@ class Line:
             # Add the new lines
             self.recent_fit.append((left_fit, right_fit))
             self.radius_of_curvature = (left_curv_radius, right_curv_radius)
+            self.center_dist = center_dist
+            self.lane_width = (top_lane_width + bottom_lane_width) / 2
             # Update best fit
             self.best_fit = np.average(self.recent_fit, axis=0)
-            return True
+
+        # Do not take into account this failed detection
+        else:
+            self.detected = False
+            self.failures =+ 1
 
     def process_img(self, img):
         ### 1. Distortion correction ###
         undistorted = cv2.undistort(img, mtx, dist, None, mtx)
 
-        ### 3. Perspective transformation ###
+        ### 2. Perspective transformation ###
         warped, Minv = perspective_transform(undistorted)
 
-        ### 2. Gradient threshold ###
+        ### 3. Gradient threshold ###
         gradient = color_gradient_threshold(warped)
+
+        ### 4. Region of interest ###
+        masked_image = region_of_interest(gradient)
 
         ### 4. Detect lines ###
         if (self.detected):
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(masked_image, self.best_fit[0], self.best_fit[1])
         else:
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient)
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(masked_image)
 
-        ### 5. Visualize lane found back on to the road ###
-        lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
+        ### 5. Compute radius ###
+        left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width = compute_curvature_radius(masked_image, left_fit, right_fit, left_lane_inds, right_lane_inds)
 
-        ### 6. Compute radius and display on image ###
-        left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
-        if self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width) == True:
-            return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, self.detected == True)
+        ### 6. Return image with information ###
+        self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width)
+        if (self.detected == True):
+            # Use previous and current detected lines fitting
+            lanes = draw_lane(img, gradient, Minv, self.best_fit[0], self.best_fit[1])
+            result = draw_data(lanes, polyfit_image, masked_image, self.radius_of_curvature[0], self.radius_of_curvature[1], self.center_dist, self.lane_width, True)
         else:
-            return draw_data(img, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, self.detected == True)
+            # Use only current detected line
+            lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
+            result = draw_data(lanes, polyfit_image, masked_image, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
+
+        ### 7. Reset lines history if umber of failures is too high ###
+        if self.failures >= 5:
+            self.reset()
+
+        return result
 
 if __name__ == '__main__':
     ### Camera calibration ###
@@ -477,12 +528,13 @@ if __name__ == '__main__':
     video_output_2 = output_video_dir + 'challenge_video.mp4'
 
     print("Run pipeline for '" + video_output_1 + "'...")
-    line = Line()
-    video_input = VideoFileClip("project_video.mp4").subclip(22,23)
-    processed_video = video_input.fl_image(line.process_img)
+    line_1 = Line()
+    video_input = VideoFileClip("project_video.mp4")
+    processed_video = video_input.fl_image(line_1.process_img)
     processed_video.write_videofile(video_output_1, audio=False)
 
-    '''print("Run pipeline for '" + video_output_2 + "'...")
+    print("Run pipeline for '" + video_output_2 + "'...")
+    line_2 = Line()
     video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(pipeline)
-    processed_video.write_videofile(video_output_2, audio=False)'''
+    processed_video = video_input.fl_image(line_2.process_img)
+    processed_video.write_videofile(video_output_2, audio=False)
