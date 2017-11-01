@@ -281,12 +281,16 @@ def compute_curvature_radius(img, left_fit, right_fit, left_lane_inds, right_lan
     center_dist = (lane_center - car_center) * xm_per_pix
 
     # Compute lane width
-    yvalue = img.shape[0]
-    leftx = left_fit[0]*yvalue**2 + left_fit[1]*yvalue + left_fit[2]
-    rightx = right_fit[0]*yvalue**2 + right_fit[1]*yvalue + right_fit[2]
-    lane_width = abs(leftx - rightx) * xm_per_pix
+    top_yvalue = 10
+    bottom_yvalue = img.shape[0]
+    top_leftx = left_fit[0]*bottom_yvalue**2 + left_fit[1]*bottom_yvalue + left_fit[2]
+    bottom_leftx = left_fit[0]*bottom_yvalue**2 + left_fit[1]*bottom_yvalue + left_fit[2]
+    top_rightx = right_fit[0]*bottom_yvalue**2 + right_fit[1]*bottom_yvalue + right_fit[2]
+    bottom_rightx = right_fit[0]*bottom_yvalue**2 + right_fit[1]*bottom_yvalue + right_fit[2]
+    bottom_lane_width = abs(bottom_leftx - bottom_rightx) * xm_per_pix
+    top_lane_width = abs(top_leftx - top_rightx) * xm_per_pix
 
-    return (left_curv_radius, right_curv_radius, center_dist, lane_width)
+    return (left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width)
 
 def draw_lane(img, warped, Minv, left_fit, right_fit):
     # Generate x and y values for plotting
@@ -383,21 +387,29 @@ class Line:
         self.detected = False
         self.radius_of_curvature = None
 
-    def sanity_check(self, left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width):
+    def sanity_check(self, left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width):
         # Check that both lines have similar curvature
         if abs(left_curv_radius - right_curv_radius) > 1000:
             return False
+
         # Check that both lines are separated by approximately the right distance horizontally
+        lane_width = (top_lane_width + bottom_lane_width) / 2
         if abs(3.7 - lane_width) > 0.5:
+            return False
+
+        # Check that both lines are roughly parallel
+        if abs(top_lane_width - bottom_lane_width) > 0.5:
             return False
 
         return True
 
-    def update_lines(self, left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width):
+    def update_lines(self, left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width):
         # Lines haven't been detected or the detection doesn't make sense --> reset hsitory
-        is_detection_ok = self.sanity_check(left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width) == True
+        is_detection_ok = self.sanity_check(left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width) == True
         if (left_fit is None or right_fit is None or not is_detection_ok):
             self.reset()
+            return False
+
         # Update history with the current detection
         else:
             self.detected = True
@@ -409,6 +421,7 @@ class Line:
             self.radius_of_curvature = (left_curv_radius, right_curv_radius)
             # Update best fit
             self.best_fit = np.average(self.recent_fit, axis=0)
+            return True
 
     def process_img(self, img):
         ### 1. Distortion correction ###
@@ -430,10 +443,11 @@ class Line:
         lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
 
         ### 6. Compute radius and display on image ###
-        left_curv_radius, right_curv_radius, center_dist, lane_width = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
-        self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, lane_width)
-
-        return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, lane_width, self.detected == True)
+        left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
+        if self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width) == True:
+            return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, self.detected == True)
+        else:
+            return draw_data(img, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, self.detected == True)
 
 if __name__ == '__main__':
     ### Camera calibration ###
