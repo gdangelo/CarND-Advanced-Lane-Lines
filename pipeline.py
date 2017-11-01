@@ -115,32 +115,6 @@ def color_gradient_threshold(img):
 
     return combined
 
-def region_of_interest(img):
-    # Set vertices for the mask
-    imshape = img.shape # x: imshape[1], y: imshape[0]
-    left_bottom = (0.15*imshape[1], imshape[0])
-    left_top = (0.45*imshape[1], 0.6*imshape[0])
-    right_top = (0.60*imshape[1], 0.6*imshape[0])
-    right_bottom = (0.9*imshape[1], imshape[0])
-    vertices = np.array([[left_bottom, left_top, right_top, right_bottom]], dtype=np.int32)
-
-    # Define blank mask to start with
-    mask = np.zeros_like(img)
-
-    # Define a 3 channel or 1 channel color to fill the mask with depending on the input image
-    if len(img.shape) > 2:
-        channel_count = img.shape[2]  # i.e. 3 or 4 depending on the image
-        ignore_mask_color = (255,) * channel_count
-    else:
-        ignore_mask_color = 255
-
-    # Fill pixels inside the polygon defined by "vertices" with the fill color
-    cv2.fillPoly(mask, vertices, ignore_mask_color)
-
-    # Return the image only where mask pixels are nonzero
-    masked_image = cv2.bitwise_and(img, mask)
-    return masked_image
-
 def perspective_transform(img):
     # From trapezoidale shape on straight lines...
     src = np.float32([[519, 502], [765, 502], [1029, 668], [275, 668]])
@@ -414,27 +388,24 @@ class Line:
         ### 1. Distortion correction ###
         undistorted = cv2.undistort(img, mtx, dist, None, mtx)
 
-        ### 2. Gradient threshold ###
-        gradient = color_gradient_threshold(undistorted)
-
-        ### 2. Region of interest ###
-        masked_image = region_of_interest(gradient)
-
         ### 3. Perspective transformation ###
-        warped, Minv = perspective_transform(masked_image)
+        warped, Minv = perspective_transform(undistorted)
+
+        ### 2. Gradient threshold ###
+        gradient = color_gradient_threshold(warped)
 
         ### 4. Detect lines and store it ###
         if (self.detected):
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(warped, self.best_fit[0], self.best_fit[1])
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
         else:
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(warped)
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient)
         self.store_lines(left_fit, right_fit)
 
         ### 5. Visualize lane found back on to the road ###
-        lanes = draw_lane(img, warped, Minv, left_fit, right_fit)
+        lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
 
         ### 6. Compute radius and display on image
-        left_curv_radius, right_curv_radius, center_dist = compute_curvature_radius(warped, left_fit, right_fit, left_lane_inds, right_lane_inds)
+        left_curv_radius, right_curv_radius, center_dist = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
         return draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist)
 
 if __name__ == '__main__':
