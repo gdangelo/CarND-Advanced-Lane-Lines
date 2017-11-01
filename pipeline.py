@@ -53,7 +53,7 @@ def get_points_for_calibration(nx, ny):
 
 def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0, 255)):
     # Calculate directional gradient
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     x = 1 if orient == 'x' else 0
     y = 1 if orient == 'y' else 0
     sobel = cv2.Sobel(gray, cv2.CV_64F, x, y, ksize=sobel_kernel)
@@ -66,7 +66,7 @@ def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0, 255)):
 
 def mag_thresh(img, sobel_kernel=3, thresh=(0, 255)):
     # Calculate gradient magnitude
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
     sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
     mag = np.sqrt(np.add(np.square(sobelx), np.square(sobely)))
@@ -78,7 +78,7 @@ def mag_thresh(img, sobel_kernel=3, thresh=(0, 255)):
 
 def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     # Calculate gradient direction
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
     sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
     abs_sobelx = np.absolute(sobelx)
@@ -90,7 +90,7 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     return dir_binary
 
 def hls_threshold(img, thresh=(0, 255)):
-    hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     S_channel = hls[:,:,2]
     color_binary = np.zeros_like(S_channel)
     color_binary[(S_channel >= thresh[0]) & (S_channel <= thresh[1])] = 1
@@ -437,7 +437,7 @@ if __name__ == '__main__':
 
     print("Run pipeline for '" + video_output_1 + "'...")
     line = Line()
-    video_input = VideoFileClip("project_video.mp4").subclip(0,2)
+    video_input = VideoFileClip("project_video.mp4").subclip(22,23)
     processed_video = video_input.fl_image(line.process_img)
     processed_video.write_videofile(video_output_1, audio=False)
 
