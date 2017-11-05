@@ -118,21 +118,15 @@ def color_gradient_threshold(img):
 def region_of_interest(img):
     # Set vertices for the mask
     imshape = img.shape # x: imshape[1], y: imshape[0]
-    left_bottom = (0.1*imshape[1], 0.95*imshape[0])
-    left_top = (0.1*imshape[1], 0.1*imshape[0])
+    left_bottom = (0.3*imshape[1], 0.95*imshape[0])
+    left_top = (0.3*imshape[1], 0.1*imshape[0])
     right_top = (0.7*imshape[1], 0.1*imshape[0])
     right_bottom = (0.7*imshape[1], 0.95*imshape[0])
     vertices = np.array([[left_bottom, left_top, right_top, right_bottom]], dtype=np.int32)
 
     # Define blank mask to start with
     mask = np.zeros_like(img)
-
-    # Define a 3 channel or 1 channel color to fill the mask with depending on the input image
-    if len(img.shape) > 2:
-        channel_count = img.shape[2]  # i.e. 3 or 4 depending on the image
-        ignore_mask_color = (255,) * channel_count
-    else:
-        ignore_mask_color = 255
+    ignore_mask_color = 1
 
     # Fill pixels inside the polygon defined by "vertices" with the fill color
     cv2.fillPoly(mask, vertices, ignore_mask_color)
@@ -475,9 +469,11 @@ class Line:
         masked_image = region_of_interest(gradient)
 
         ### 4. Detect lines ###
-        if (self.detected):
+        if (self.best_fit is not None and self.failures < 5):
             polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(masked_image, self.best_fit[0], self.best_fit[1])
         else:
+            if (self.best_fit is not None):
+                self.reset()
             polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(masked_image)
 
         ### 5. Compute radius ###
@@ -485,18 +481,14 @@ class Line:
 
         ### 6. Return image with information ###
         self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width)
-        if (self.detected == True):
-            # Use previous and current detected lines fitting
+        if (self.best_fit is not None):
+            # Use updated history to draw line fitting
             lanes = draw_lane(img, gradient, Minv, self.best_fit[0], self.best_fit[1])
             result = draw_data(lanes, polyfit_image, masked_image, self.radius_of_curvature[0], self.radius_of_curvature[1], self.center_dist, self.lane_width, True)
         else:
             # Use only current detected line
             lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
             result = draw_data(lanes, polyfit_image, masked_image, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
-
-        ### 7. Reset lines history if umber of failures is too high ###
-        if self.failures >= 5:
-            self.reset()
 
         return result
 
@@ -530,11 +522,11 @@ if __name__ == '__main__':
     print("Run pipeline for '" + video_output_1 + "'...")
     line_1 = Line()
     video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_1.process_img)
+    processed_video = video_input.fl_image(line_1.process_img).subclip(0,1)
     processed_video.write_videofile(video_output_1, audio=False)
 
-    print("Run pipeline for '" + video_output_2 + "'...")
+    '''print("Run pipeline for '" + video_output_2 + "'...")
     line_2 = Line()
     video_input = VideoFileClip("project_video.mp4")
     processed_video = video_input.fl_image(line_2.process_img)
-    processed_video.write_videofile(video_output_2, audio=False)
+    processed_video.write_videofile(video_output_2, audio=False)'''
