@@ -13,8 +13,8 @@ calibration_file = "calibration_pickle.p"
 
 # Parameters for gradient threshold
 ksize = 7
-gradx_thresh = (25, 255)
-grady_thresh = (25, 255)
+gradx_thresh = (50, 255)
+grady_thresh = (50, 255)
 magni_thresh = (25, 255)
 dir_thresh = (0., 0.09)
 hls_thresh = (180, 255)
@@ -146,15 +146,16 @@ def region_of_interest(img):
     return masked_image
 
 def perspective_transform(img):
-    h,w = img.shape[:2]
-    # From trapezoidale shape on straight lines...
-    src = np.float32([(575,464), (707,464), (258,682), (1049,682)])
-    # ...to rectangle
-    dst = np.float32([(450,0), (w-450,0), (450,h), (w-450,h)])
+    img_size = (img.shape[0], img.shape[1])
+    # Define src and dst points
+    x_center = img_size[1]/2
+    x_offset=120
+    src = np.float32([(x_offset,img_size[0]), (x_center-54, 450), (x_center+54, 450), (img_size[1]-x_offset,img_size[0])])
+    dst = np.float32([(x_offset,img_size[1]), (x_offset,0), (img_size[0]-x_offset, 0), (img_size[0]-x_offset,img_size[1])])
+    # Apply transform
     M = cv2.getPerspectiveTransform(src, dst)
     Minv = cv2.getPerspectiveTransform(dst, src)
-    #Minv = cv2.getPerspectiveTransform(dst, src)
-    return (cv2.warpPerspective(img, M, img.shape[1::-1], flags=cv2.INTER_LINEAR), Minv)
+    return (cv2.warpPerspective(img, M, (img_size[0], img_size[1]), flags=cv2.INTER_LINEAR), Minv)
 
 def sliding_windows_polyfit(img, previous_left_fit=None, previous_right_fit=None):
 
@@ -325,7 +326,7 @@ def compute_curvature_radius(img, left_fit, right_fit, left_lane_inds, right_lan
 
 def draw_lane(img, warped, Minv, left_fit, right_fit):
     # Generate x and y values for plotting
-    ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
+    ploty = np.linspace(0, img.shape[1]-1, img.shape[1])
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
 
@@ -342,7 +343,7 @@ def draw_lane(img, warped, Minv, left_fit, right_fit):
     cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
 
     # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
+    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
     # Combine the result with the original image
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
@@ -483,24 +484,24 @@ class Line:
         gradient = color_gradient_threshold(warped)
 
         ### 4. Region of interest ###
-        masked_image = region_of_interest(gradient)
+        #masked_image = region_of_interest(gradient)
 
         ### 4. Detect lines ###
         if (self.best_fit is not None and self.failures < 5):
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(masked_image, self.best_fit[0], self.best_fit[1])
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
         else:
             if (self.best_fit is not None):
                 self.reset()
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(masked_image)
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient)
 
         ### 5. Compute radius ###
-        left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width = compute_curvature_radius(masked_image, left_fit, right_fit, left_lane_inds, right_lane_inds)
+        left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
 
         ### 6. Return image with information ###
         self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width)
 
         lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
-        result = draw_data(lanes, polyfit_image, masked_image, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
+        result = draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
 
         # Save images
         if save_steps:
@@ -508,7 +509,7 @@ class Line:
             save_image_transform(img, undistorted, False, output_dir, file_name + "_0")
             save_image_transform(img, warped, False, output_dir, file_name + "_1")
             save_image_transform(img, gradient, True, output_dir, file_name + "_2")
-            save_image_transform(img, masked_image, True, output_dir, file_name + "_3")
+            #save_image_transform(img, masked_image, True, output_dir, file_name + "_3")
             save_image_transform(None, polyfit_image, False, output_dir, file_name + "_4")
             save_image_transform(None, lanes, False, output_dir, file_name + "_5")
 
@@ -517,7 +518,7 @@ class Line:
 if __name__ == '__main__':
     ### Camera calibration ###
     if os.path.exists(calibration_file):
-        print("Read in the calibration data")
+        print("Read in the calibration data\n")
         calibration_pickle = pickle.load(open(calibration_file, "rb"))
         mtx = calibration_pickle["mtx"]
         dist = calibration_pickle["dist"]
@@ -527,7 +528,7 @@ if __name__ == '__main__':
         img = cv2.imread('./test_images/test1.jpg')
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img.shape[1::-1], None, None)
 
-        print("Save the camera calibration result for later use")
+        print("Save the camera calibration result for later use\n")
         calibration_pickle = {}
         calibration_pickle["mtx"] = mtx
         calibration_pickle["dist"] = dist
@@ -546,21 +547,23 @@ if __name__ == '__main__':
     for file_name in os.listdir(test_dir):
         print("Run pipeline for '" + file_name + "'")
         line = Line()
+        # Read image and convert to RGB
         img = cv2.cvtColor(cv2.imread(test_dir + file_name), cv2.COLOR_BGR2RGB)
+        # Process image
         line.process_img(img, output_image_dir, file_name.split(".")[0], True)
 
     # Run pipeline on project and challenge videos
     video_output_1 = output_video_dir + 'project_video.mp4'
     video_output_2 = output_video_dir + 'challenge_video.mp4'
 
-    '''print("Run pipeline for '" + video_output_1 + "'...")
+    '''print("\nRun pipeline for '" + video_output_1 + "'...")
     line_video_1 = Line()
     video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_1.process_img).subclip(41,42)
+    processed_video = video_input.fl_image(line_video_1.process_img).subclip(41,42)
     processed_video.write_videofile(video_output_1, audio=False)
 
-    print("Run pipeline for '" + video_output_2 + "'...")
+    print("\nRun pipeline for '" + video_output_2 + "'...")
     line_video_2 = Line()
     video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_2.process_img)
+    processed_video = video_input.fl_image(line_video_2.process_img)
     processed_video.write_videofile(video_output_2, audio=False)'''
