@@ -17,7 +17,8 @@ gradx_thresh = (50, 255)
 grady_thresh = (50, 255)
 magni_thresh = (25, 255)
 dir_thresh = (0., 0.09)
-hls_thresh = (180, 255)
+hls_thresh = (110, 255)
+rgb_thresh = (220, 255)
 
 def get_points_for_calibration(nx, ny):
     # Prepare object points
@@ -89,26 +90,28 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     dir_binary[(direction >= thresh[0]) & (direction <= thresh[1])] = 1
     return dir_binary
 
-def hls_threshold(img, thresh=(0, 255)):
+def color_threshold(img, hls_thresh=(0, 255), rgb_thresh=(0, 255)):
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
     S_channel = hls[:,:,2]
-    B_channel = lab[:,:,2]
+    R_channel = img[:,:,0]
 
-    b_binary = np.zeros_like(B_channel)
-    b_binary[(B_channel >= 155) & (B_channel <= 250)] = 1
+    r_binary = np.zeros_like(R_channel)
+    r_binary[(R_channel >= rgb_thresh[0]) & (R_channel <= rgb_thresh[1])] = 1
 
     s_binary = np.zeros_like(S_channel)
-    s_binary[(S_channel >= thresh[0]) & (S_channel <= thresh[1])] = 1
+    s_binary[(S_channel >= hls_thresh[0]) & (S_channel <= hls_thresh[1])] = 1
 
-    color_binary = np.zeros_like(S_channel)
-    color_binary[(s_binary == 1) | (b_binary == 1)] = 1
+    color_binary = np.zeros_like(R_channel)
+    color_binary[(s_binary == 1) & (r_binary == 1)] = 1
 
-    return color_binary
+    if color_binary.all() == 0:
+        return r_binary
+    else:
+        return color_binary
 
 def color_gradient_threshold(img):
     # Apply color gradient (S channel)
-    hls_binary = hls_threshold(img, thresh=hls_thresh)
+    color_binary = color_threshold(img, hls_thresh=hls_thresh, rgb_thresh=rgb_thresh)
 
     # Apply gradient thresholding functions
     gradx = abs_sobel_thresh(img, orient='x', sobel_kernel=ksize, thresh=gradx_thresh)
@@ -117,11 +120,10 @@ def color_gradient_threshold(img):
     dir_binary = dir_threshold(img, sobel_kernel=ksize, thresh=dir_thresh)
 
     # Combine gradient & color thresholds
-    color_binary = np.dstack((np.zeros_like(dir_binary), dir_binary, dir_binary)) * 255
     gradient_binary = np.zeros_like(dir_binary)
     gradient_binary[((gradx == 1) & (grady == 1)) | ((mag_binary == 1) & (dir_binary == 1))] = 1
     combined = np.zeros_like(dir_binary)
-    combined[(gradient_binary == 1) | (hls_binary == 1)] = 1
+    combined[(gradient_binary == 1) | (color_binary == 1)] = 1
 
     return combined
 
@@ -519,26 +521,26 @@ if __name__ == '__main__':
         os.makedirs(output_image_dir)
 
     # Run pipeline on test images and save image transformation steps
-    test_dir = "test_images/"
+    '''test_dir = "test_images/"
     for file_name in os.listdir(test_dir):
         print("Run pipeline for '" + file_name + "'")
         line = Line()
         # Read image and convert to RGB
         img = cv2.cvtColor(cv2.imread(test_dir + file_name), cv2.COLOR_BGR2RGB)
         # Process image
-        line.process_img(img, output_image_dir, file_name.split(".")[0], True)
+        line.process_img(img, output_image_dir, file_name.split(".")[0], True)'''
 
     # Run pipeline on project and challenge videos
     video_output_1 = output_video_dir + 'project_video.mp4'
     video_output_2 = output_video_dir + 'challenge_video.mp4'
 
-    '''print("\nRun pipeline for '" + video_output_1 + "'...")
+    print("\nRun pipeline for '" + video_output_1 + "'...")
     line_video_1 = Line()
     video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_video_1.process_img).subclip(41,42)
+    processed_video = video_input.fl_image(line_video_1.process_img)
     processed_video.write_videofile(video_output_1, audio=False)
 
-    print("\nRun pipeline for '" + video_output_2 + "'...")
+    '''print("\nRun pipeline for '" + video_output_2 + "'...")
     line_video_2 = Line()
     video_input = VideoFileClip("project_video.mp4")
     processed_video = video_input.fl_image(line_video_2.process_img)
