@@ -17,7 +17,7 @@ gradx_thresh = (25, 255)
 grady_thresh = (25, 255)
 magni_thresh = (25, 255)
 dir_thresh = (0., 0.09)
-hls_thresh = (110, 255)
+hls_thresh = (180, 255)
 
 def get_points_for_calibration(nx, ny):
     # Prepare object points
@@ -91,9 +91,19 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
 
 def hls_threshold(img, thresh=(0, 255)):
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
     S_channel = hls[:,:,2]
+    B_channel = lab[:,:,2]
+
+    b_binary = np.zeros_like(B_channel)
+    b_binary[(B_channel >= 155) & (B_channel <= 250)] = 1
+
+    s_binary = np.zeros_like(S_channel)
+    s_binary[(S_channel >= thresh[0]) & (S_channel <= thresh[1])] = 1
+
     color_binary = np.zeros_like(S_channel)
-    color_binary[(S_channel >= thresh[0]) & (S_channel <= thresh[1])] = 1
+    color_binary[(s_binary == 1) | (b_binary == 1)] = 1
+
     return color_binary
 
 def color_gradient_threshold(img):
@@ -377,17 +387,23 @@ def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, cen
 
     return result
 
-def save_image_transform(original, transformed, is_gray, file_name):
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
-    ax1.imshow(original)
-    ax1.set_title('Original Image', fontsize=30)
-    if (is_gray == True):
-        ax2.imshow(transformed, cmap='gray')
+def save_image_transform(original, transformed, is_gray, output_dir, file_name):
+    plt.clf()
+    if original is not None:
+        f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
+        ax1.imshow(original)
+        ax1.set_title('Original Image', fontsize=30)
+        if (is_gray == True):
+            ax2.imshow(transformed, cmap='gray')
+        else:
+            ax2.imshow(transformed)
+        ax2.set_title('Result Image', fontsize=30)
     else:
-        ax2.imshow(transformed)
-    ax2.set_title('Result Image', fontsize=30)
-    plt.savefig('./output_images/' + file_name + '.jpg')
-    plt.show()
+        plt.imshow(transformed)
+
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+    plt.savefig(output_dir + file_name + '.jpg')
 
 class Line:
     def __init__(self, max_lines=5):
@@ -455,7 +471,8 @@ class Line:
             self.detected = False
             self.failures =+ 1
 
-    def process_img(self, img):
+    def process_img(self, img, output_dir = "", file_name = "", save_steps = False):
+
         ### 1. Distortion correction ###
         undistorted = cv2.undistort(img, mtx, dist, None, mtx)
 
@@ -481,14 +498,19 @@ class Line:
 
         ### 6. Return image with information ###
         self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width)
-        if (self.best_fit is not None):
-            # Use updated history to draw line fitting
-            lanes = draw_lane(img, gradient, Minv, self.best_fit[0], self.best_fit[1])
-            result = draw_data(lanes, polyfit_image, masked_image, self.radius_of_curvature[0], self.radius_of_curvature[1], self.center_dist, self.lane_width, True)
-        else:
-            # Use only current detected line
-            lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
-            result = draw_data(lanes, polyfit_image, masked_image, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
+
+        lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
+        result = draw_data(lanes, polyfit_image, masked_image, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
+
+        # Save images
+        if save_steps:
+            output_dir += file_name + "/"
+            save_image_transform(img, undistorted, False, output_dir, file_name + "_0")
+            save_image_transform(img, warped, False, output_dir, file_name + "_1")
+            save_image_transform(img, gradient, True, output_dir, file_name + "_2")
+            save_image_transform(img, masked_image, True, output_dir, file_name + "_3")
+            save_image_transform(None, polyfit_image, False, output_dir, file_name + "_4")
+            save_image_transform(None, lanes, False, output_dir, file_name + "_5")
 
         return result
 
@@ -515,18 +537,30 @@ if __name__ == '__main__':
     output_video_dir = "videos_output/"
     if not os.path.isdir(output_video_dir):
         os.makedirs(output_video_dir)
+    output_image_dir = "images_output/"
+    if not os.path.isdir(output_image_dir):
+        os.makedirs(output_image_dir)
 
+    # Run pipeline on test images and save image transformation steps
+    test_dir = "test_images/"
+    for file_name in os.listdir(test_dir):
+        print("Run pipeline for '" + file_name + "'")
+        line = Line()
+        img = cv2.cvtColor(cv2.imread(test_dir + file_name), cv2.COLOR_BGR2RGB)
+        line.process_img(img, output_image_dir, file_name.split(".")[0], True)
+
+    # Run pipeline on project and challenge videos
     video_output_1 = output_video_dir + 'project_video.mp4'
     video_output_2 = output_video_dir + 'challenge_video.mp4'
 
-    print("Run pipeline for '" + video_output_1 + "'...")
-    line_1 = Line()
+    '''print("Run pipeline for '" + video_output_1 + "'...")
+    line_video_1 = Line()
     video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_1.process_img).subclip(0,1)
+    processed_video = video_input.fl_image(line_1.process_img).subclip(41,42)
     processed_video.write_videofile(video_output_1, audio=False)
 
-    '''print("Run pipeline for '" + video_output_2 + "'...")
-    line_2 = Line()
+    print("Run pipeline for '" + video_output_2 + "'...")
+    line_video_2 = Line()
     video_input = VideoFileClip("project_video.mp4")
     processed_video = video_input.fl_image(line_2.process_img)
     processed_video.write_videofile(video_output_2, audio=False)'''
