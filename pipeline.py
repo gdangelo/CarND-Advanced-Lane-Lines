@@ -125,26 +125,6 @@ def color_gradient_threshold(img):
 
     return combined
 
-def region_of_interest(img):
-    # Set vertices for the mask
-    imshape = img.shape # x: imshape[1], y: imshape[0]
-    left_bottom = (0.3*imshape[1], 0.95*imshape[0])
-    left_top = (0.3*imshape[1], 0.1*imshape[0])
-    right_top = (0.7*imshape[1], 0.1*imshape[0])
-    right_bottom = (0.7*imshape[1], 0.95*imshape[0])
-    vertices = np.array([[left_bottom, left_top, right_top, right_bottom]], dtype=np.int32)
-
-    # Define blank mask to start with
-    mask = np.zeros_like(img)
-    ignore_mask_color = 1
-
-    # Fill pixels inside the polygon defined by "vertices" with the fill color
-    cv2.fillPoly(mask, vertices, ignore_mask_color)
-
-    # Return the image only where mask pixels are nonzero
-    masked_image = cv2.bitwise_and(img, mask)
-    return masked_image
-
 def perspective_transform(img):
     img_size = (img.shape[0], img.shape[1])
     # Define src and dst points
@@ -377,14 +357,14 @@ def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, cen
     img_2 = cv2.resize(bottom_img_3_channels, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
 
     offset = 50
-    endy_img_1 = offset+img_1.shape[0]
-    endy_img_2 = endy_img_1+img_2.shape[0]+20
-    starty_img_2 = endy_img_1+20
-    endx = top_img.shape[1]-offset
-    startx = endx-img_1.shape[1]
+    endy = offset+img_1.shape[0]
+    endx_img_1 = img.shape[1]-offset
+    startx_img_1 = endx_img_1-img_1.shape[1]
+    endx_img_2 = startx_img_1-25
+    startx_img_2 = endx_img_2-img_2.shape[1]
 
-    result[offset:endy_img_1, startx:endx] = img_1
-    result[starty_img_2:endy_img_2, startx:endx] = img_2
+    result[offset:endy, startx_img_1:endx_img_1] = img_1
+    result[offset:endy, startx_img_2:endx_img_2] = img_2
 
     return result
 
@@ -483,9 +463,6 @@ class Line:
         ### 3. Gradient threshold ###
         gradient = color_gradient_threshold(warped)
 
-        ### 4. Region of interest ###
-        #masked_image = region_of_interest(gradient)
-
         ### 4. Detect lines ###
         if (self.best_fit is not None and self.failures < 5):
             polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
@@ -509,9 +486,8 @@ class Line:
             save_image_transform(img, undistorted, False, output_dir, file_name + "_0")
             save_image_transform(img, warped, False, output_dir, file_name + "_1")
             save_image_transform(img, gradient, True, output_dir, file_name + "_2")
-            #save_image_transform(img, masked_image, True, output_dir, file_name + "_3")
-            save_image_transform(None, polyfit_image, False, output_dir, file_name + "_4")
-            save_image_transform(None, lanes, False, output_dir, file_name + "_5")
+            save_image_transform(None, polyfit_image, False, output_dir, file_name + "_3")
+            save_image_transform(None, lanes, False, output_dir, file_name + "_4")
 
         return result
 
