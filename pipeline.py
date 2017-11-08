@@ -330,7 +330,7 @@ def draw_lane(img, warped, Minv, left_fit, right_fit):
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
 
-def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist, lane_width, is_tracking):
+def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, center_dist, lane_width, is_detected, use_history):
     result = np.copy(img)
 
     # Add text to the original image
@@ -350,8 +350,17 @@ def draw_data(img, top_img, bottom_img, left_curv_radius, right_curv_radius, cen
         text = 'Vehicule position: {:04.2f}'.format(center_dist) + 'm right of center'
     cv2.putText(result, text, (50, 160), font, 1, (255,255,255), 2, cv2.LINE_AA)
 
-    cv2.putText(result, 'Tracking Locked' if is_tracking else 'Tracking Lost', (50, 190), font, 1, (0,255,0) if is_tracking else (255,0,0), 2, cv2.LINE_AA)
+    if is_detected:
+        color = (0,255,0)
+        text = "Good detection"
+    elif not is_detected and use_history:
+        color = (255,215,0)
+        text = "Bad detection --> Use history"
+    else:
+        color = (255,0,0)
+        text = "Bad detection, no history --> Use it anyway"
 
+    cv2.putText(result, text, (50, 190), font, 1, color, 2, cv2.LINE_AA)
     # Add transformed images to the original image
     mask = np.ones_like(top_img)*255
     img_1 = cv2.resize(top_img, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
@@ -418,7 +427,7 @@ class Line:
 
     def sanity_check(self, left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width):
         # Check that both lines have similar curvature
-        if abs(left_curv_radius - right_curv_radius) > 1000:
+        if abs(left_curv_radius - right_curv_radius) > 1500:
             return False
 
         # Check that both lines are separated by approximately the right distance horizontally
@@ -427,7 +436,7 @@ class Line:
             return False
 
         # Check that both lines are roughly parallel
-        if abs(top_lane_width - bottom_lane_width) > 0.5:
+        if abs(top_lane_width - bottom_lane_width) > 0.7:
             return False
 
         return True
@@ -452,7 +461,7 @@ class Line:
         # Do not take into account this failed detection
         else:
             self.detected = False
-            self.failures =+ 1
+            self.failures += 1
 
     def process_img(self, img, output_dir = "", file_name = "", save_steps = False):
 
@@ -466,12 +475,11 @@ class Line:
         gradient = color_gradient_threshold(warped)
 
         ### 4. Detect lines ###
-        if (self.best_fit is not None and self.failures < 5):
-            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
-        else:
-            if (self.best_fit is not None):
-                self.reset()
+        if (self.best_fit is None or self.failures >= self.max_lines):
+            self.reset()
             polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient)
+        else:
+            polyfit_image, left_fit, right_fit, left_lane_inds, right_lane_inds = sliding_windows_polyfit(gradient, self.best_fit[0], self.best_fit[1])
 
         ### 5. Compute radius ###
         left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width = compute_curvature_radius(gradient, left_fit, right_fit, left_lane_inds, right_lane_inds)
@@ -479,8 +487,18 @@ class Line:
         ### 6. Return image with information ###
         self.update_lines(left_fit, right_fit, left_curv_radius, right_curv_radius, center_dist, top_lane_width, bottom_lane_width)
 
-        lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
-        result = draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False)
+        if self.detected:
+            # Use current detected line
+            lanes = draw_lane(img, gradient, Minv, self.recent_fit[-1][0], self.recent_fit[-1][1])
+            result = draw_data(lanes, polyfit_image, gradient, self.radius_of_curvature[0], self.radius_of_curvature[1], self.center_dist, self.lane_width, True, False)
+        elif not self.detected and self.best_fit is not None:
+            # Use history
+            lanes = draw_lane(img, gradient, Minv, self.best_fit[0], self.best_fit[1])
+            result = draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False, True)
+        else:
+            # In case there's no history draw the current 'falsy' detection --> better than nothing
+            lanes = draw_lane(img, gradient, Minv, left_fit, right_fit)
+            result = draw_data(lanes, polyfit_image, gradient, left_curv_radius, right_curv_radius, center_dist, (top_lane_width+bottom_lane_width)/2, False, False)
 
         # Save images
         if save_steps:
@@ -521,27 +539,20 @@ if __name__ == '__main__':
         os.makedirs(output_image_dir)
 
     # Run pipeline on test images and save image transformation steps
-    '''test_dir = "test_images/"
+    test_dir = "test_images/"
     for file_name in os.listdir(test_dir):
         print("Run pipeline for '" + file_name + "'")
         line = Line()
         # Read image and convert to RGB
         img = cv2.cvtColor(cv2.imread(test_dir + file_name), cv2.COLOR_BGR2RGB)
         # Process image
-        line.process_img(img, output_image_dir, file_name.split(".")[0], True)'''
+        line.process_img(img, output_image_dir, file_name.split(".")[0], True)
 
     # Run pipeline on project and challenge videos
-    video_output_1 = output_video_dir + 'project_video.mp4'
-    video_output_2 = output_video_dir + 'challenge_video.mp4'
-
-    print("\nRun pipeline for '" + video_output_1 + "'...")
-    line_video_1 = Line()
-    video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_video_1.process_img)
-    processed_video.write_videofile(video_output_1, audio=False)
-
-    '''print("\nRun pipeline for '" + video_output_2 + "'...")
-    line_video_2 = Line()
-    video_input = VideoFileClip("project_video.mp4")
-    processed_video = video_input.fl_image(line_video_2.process_img)
-    processed_video.write_videofile(video_output_2, audio=False)'''
+    '''test_dir = "test_videos/"
+    for file_name in os.listdir(test_dir):
+        print("\nRun pipeline for '" + file_name + "'...")
+        line_video = Line(max_lines=3)
+        video_input = VideoFileClip(test_dir + file_name)
+        processed_video = video_input.fl_image(line_video.process_img)
+        processed_video.write_videofile(output_video_dir + file_name, audio=False)'''
