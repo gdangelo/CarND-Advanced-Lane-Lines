@@ -16,7 +16,7 @@ The goals / steps of this project are the following:
 [//]: # (Image References)
 
 [image1]: ./camera_cal/calibration2.jpg "Chessboard"
-[image2]: ./test_images/test1.jpg "Road Transformed"
+[image2]: ./images_output/test1/test1_0.jpg "Undistorted"
 [image3]: ./examples/binary_combo_example.jpg "Binary Example"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
@@ -89,14 +89,7 @@ I then used the output `objpoints` and `imgpoints` to compute the camera calibra
 ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img.shape[1::-1], None, None)
 ```
 
-I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained the following result.
-
-```python 
-def process_img(self, img, output_dir = "", file_name = "", save_steps = False):
-
-        ### 1. Distortion correction ###
-        undistorted = cv2.undistort(img, mtx, dist, None, mtx)
-```
+Below, you can see the detected corners drawn on each chessboard image:
 
 ![Corners](./images_output/calibration/corners_found1.jpg)|![Corners](./images_output/calibration/corners_found2.jpg)|![Corners](./images_output/calibration/corners_found3.jpg)
 ------------ | ------------- | ------------
@@ -110,9 +103,29 @@ In order to do not compute camera matrix and distortion coefficients every time,
 
 ### Pipeline (single images)
 
+The pipeline created for this project processes images in the following steps:
+
+- **Step 1**: Apply distortion correction using a computed camera calibration matrix and distortion coefficients.
+- **Step 2**: Apply a perspective transformation to warp the image to a birds eye view perspective of the lane lines.
+- **Step 3**: Apply color and gradient thresholds to create a binary image which isolates the pixels representing lane lines.
+- **Step 4**: Detect the lane line pixels and fit a polynomial for the left and right lane boundaries.
+- **Step 5**: Compute radius of curvature of the lane and vehicle position from the lane center.
+- **Step 6**: Unwarp the detected lane boundaries back onto the original image
+- **Step 7**: Output data information of the lane onto the image with step 3 and 4 for debugging.
+
 #### 1. Provide an example of a distortion-corrected image.
 
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
+Images from the camera have been undistorted using the camera calibration matrix and distortion coefficients computed previously. I applied this distortion correction to the test images using the `cv2.undistort()` function:
+
+```python 
+def process_img(self, img, output_dir = "", file_name = "", save_steps = False):
+
+        ### 1. Distortion correction ###
+        undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+```
+
+An example of an image before and after the distortion correction step is shown below:
+
 ![alt text][image2]
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
