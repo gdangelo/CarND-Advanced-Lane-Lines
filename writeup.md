@@ -17,7 +17,7 @@ The goals / steps of this project are the following:
 
 [image1]: ./camera_cal/calibration2.jpg "Chessboard"
 [image2]: ./images_output/test1/test1_0.jpg "Undistorted"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
+[image3]: ./images_output/test1/test1_1.jpg "Perspective transform"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
@@ -113,6 +113,8 @@ The pipeline created for this project processes images in the following steps:
 - **Step 6**: Unwarp the detected lane boundaries back onto the original image
 - **Step 7**: Output data information of the lane onto the image with step 3 and 4 for debugging.
 
+You can find the steps in the function called `process_img` in lines 466 through 512 in the class `Line`.
+
 #### 1. Provide an example of a distortion-corrected image.
 
 Images from the camera have been undistorted using the camera calibration matrix and distortion coefficients computed previously. I applied this distortion correction to the test images using the `cv2.undistort()` function:
@@ -128,41 +130,36 @@ An example of an image before and after the distortion correction step is shown 
 
 ![alt text][image2]
 
-#### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
+#### 2. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+
+The code for my perspective transform includes a function called `perspective_transform()`, which appears in lines 130 through 140 in the file `pipeline.py`.  The `perspective_transform()` function takes as inputs the image to process (`img`). The source (`src`) and destination (`dst`) points are defined inside that function.
+
+I chose to do not hardcode the source and destination points as I couldn't get consistent and satisfying results when trying it.
+Hence I've used the image shape and a predefined offset as follow:
+
+```python
+def perspective_transform(img):
+    img_size = (img.shape[0], img.shape[1])
+    # Define src and dst points
+    x_center = img_size[1]/2
+    x_offset=120
+    src = np.float32([(x_offset,img_size[0]), (x_center-54, 450), (x_center+54, 450), (img_size[1]-x_offset,img_size[0])])
+    dst = np.float32([(x_offset,img_size[1]), (x_offset,0), (img_size[0]-x_offset, 0), (img_size[0]-x_offset,img_size[1])])
+    # Apply transform
+    M = cv2.getPerspectiveTransform(src, dst)
+    Minv = cv2.getPerspectiveTransform(dst, src)
+    return (cv2.warpPerspective(img, M, (img_size[0], img_size[1]), flags=cv2.INTER_LINEAR), Minv)
+```
+
+Using the OpenCV `getPerspectiveTransform` and `warpPerspective` I obtain the following result:
+
+![alt text][image3]
+
+#### 3. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
 I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
 
 ![alt text][image3]
-
-#### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
-
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
-
-```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
-```
-
-This resulted in the following source and destination points:
-
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
-
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
-
-![alt text][image4]
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
