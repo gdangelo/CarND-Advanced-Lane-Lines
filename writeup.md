@@ -279,4 +279,11 @@ Here's a [Project Video][video1]
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+The main issues encountered during this project were due to the lighting conditions, shadows, contrast, and discoloration of the lines along the vehicle trip. The threshold parameters for color and gradient have been tuned many many times to find the ones that will make the detection good enough on the project video. Furthermore, a relatively basic history tracking has been implemented to smooth the lane detection and video output. It helps but was not as good as expected. 
+
+Hence, a few possible approaches for improving my pipeline and making it more robust could be the followings:
+
+- Review more color spaces (such as [Lab](https://en.wikipedia.org/wiki/Lab_color_space)) to better isolate lines
+- Perform a dynamic color and gradient thresholding to be more robust accross differents conditions (light, shadow, ...)
+- Review the sanity check to design a better confidence level for lane validation and reject
+- Review the history tracking as the one implemented is too basic and I don't get much result from it
