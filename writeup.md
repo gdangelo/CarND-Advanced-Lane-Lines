@@ -1,8 +1,4 @@
-## Writeup Template
-
-### You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
-
----
+## Writeup
 
 **Advanced Lane Finding Project**
 
@@ -19,7 +15,7 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image1]: ./examples/undistort_output.png "Undistorted"
+[image1]: ./camera_cal/calibration2.jpg "Chessboard"
 [image2]: ./test_images/test1.jpg "Road Transformed"
 [image3]: ./examples/binary_combo_example.jpg "Binary Example"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
@@ -43,13 +39,74 @@ You're reading it!
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
 
-The code for this step is contained in the first code cell of the IPython notebook located in "./examples/example.ipynb" (or in lines # through # of the file called `some_file.py`).  
+The code for this step is contained in the main function (from line 515 to line 531 of the file called pipeline.py) and in the *get_points_for_calibration()* function:
 
-I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
+```python
+### Camera calibration ###
+if os.path.exists(calibration_file):
+        print("Read in the calibration data\n")
+        calibration_pickle = pickle.load(open(calibration_file, "rb"))
+        mtx = calibration_pickle["mtx"]
+        dist = calibration_pickle["dist"]
+    else:
+        print("Calibrate camera...")
+        objpoints, imgpoints = get_points_for_calibration(9, 6)
+        img = cv2.imread('./test_images/test1.jpg')
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img.shape[1::-1], None, None)
 
-I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
+        print("Save the camera calibration result for later use\n")
+        calibration_pickle = {}
+        calibration_pickle["mtx"] = mtx
+        calibration_pickle["dist"] = dist
+        pickle.dump(calibration_pickle, open(calibration_file, "wb"))
+```
 
-![alt text][image1]
+![Chessboard][image1]
+
+The chessboard pattern used for calibration contains 9 and 6 corners in the horizontal and vertical directions, respectively (as shown above). First, I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image. Those object points are stored in the list `objp`:
+
+```python
+def get_points_for_calibration(nx, ny):
+    # Prepare object points
+    objp = np.zeros((ny*nx,3), np.float32)
+    objp[:,:2] = np.mgrid[0:nx, 0:ny].T.reshape(-1,2)
+```
+
+For each chessboard image, taken from different angles with the same camera, we retrieve the (x,y) pixel position of the chessboard corners using the OpenCV function `findChessboardCorners`. Those points are then appended to the `imgpoints` list, whereas the `objp` are appended to the `objpoints` list for each succcessful chessboard detection:
+
+```python
+# Find chessboard corners (for an 9x6 board)
+        ret, corners = cv2.findChessboardCorners(img, (nx,ny), None)
+
+        if (ret == True):
+            objpoints.append(objp)
+            imgpoints.append(corners)
+```
+
+I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function:
+
+```python
+ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img.shape[1::-1], None, None)
+```
+
+I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained the following result.
+
+```python 
+def process_img(self, img, output_dir = "", file_name = "", save_steps = False):
+
+        ### 1. Distortion correction ###
+        undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+```
+
+![Corners](./images_output/calibration/corners_found1.jpg)|![Corners](./images_output/calibration/corners_found2.jpg)|![Corners](./images_output/calibration/corners_found3.jpg)
+------------ | ------------- | ------------
+![Corners](./images_output/calibration/corners_found4.jpg)|![Corners](./images_output/calibration/corners_found5.jpg)|![Corners](./images_output/calibration/corners_found6.jpg)
+![Corners](./images_output/calibration/corners_found7.jpg)|![Corners](./images_output/calibration/corners_found8.jpg)|![Corners](./images_output/calibration/corners_found9.jpg)
+![Corners](./images_output/calibration/corners_found10.jpg)|![Corners](./images_output/calibration/corners_found11.jpg)|![Corners](./images_output/calibration/corners_found12.jpg)
+![Corners](./images_output/calibration/corners_found13.jpg)|![Corners](./images_output/calibration/corners_found16.jpg)|![Corners](./images_output/calibration/corners_found17.jpg)
+![Corners](./images_output/calibration/corners_found18.jpg)|![Corners](./images_output/calibration/corners_found19.jpg)
+
+In order to do not compute camera matrix and distortion coefficients every time, I saved them in a pickle file to reuse them every time I run my pipeline for the project videos (see pipeline.py from line 515 to 531).
 
 ### Pipeline (single images)
 
