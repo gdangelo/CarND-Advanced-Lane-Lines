@@ -17,8 +17,8 @@ The goals / steps of this project are the following:
 
 [image1]: ./camera_cal/calibration2.jpg "Chessboard"
 [image2]: ./images_output/test1/test1_0.jpg "Undistorted"
-[image3]: ./images_output/test1/test1_1.jpg "Perspective transform"
-[image4]: ./examples/warped_straight_lines.jpg "Warp Example"
+[image3]: ./images_output/test1/test1_1.jpg "Perspective Transform"
+[image4]: ./images_output/test1/test1_2.jpg "Color & Gradient Thresholds"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
 [video1]: ./project_video.mp4 "Video"
@@ -128,7 +128,7 @@ def process_img(self, img, output_dir = "", file_name = "", save_steps = False):
 
 An example of an image before and after the distortion correction step is shown below:
 
-![alt text][image2]
+![Distortion correction][image2]
 
 #### 2. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
@@ -153,13 +153,13 @@ def perspective_transform(img):
 
 Using the OpenCV `getPerspectiveTransform` and `warpPerspective` I obtain the following result:
 
-![alt text][image3]
+![Perspective transform][image3]
 
 #### 3. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines 55 through 128 in `pipeline.py`). Here's an example of my output for this step:
 
-![alt text][image3]
+![Binary image][image4]
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
