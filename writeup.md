@@ -19,7 +19,7 @@ The goals / steps of this project are the following:
 [image2]: ./images_output/test1/test1_0.jpg "Undistorted"
 [image3]: ./images_output/test1/test1_1.jpg "Perspective Transform"
 [image4]: ./images_output/test1/test1_2.jpg "Color & Gradient Thresholds"
-[image5]: ./examples/color_fit_lines.jpg "Fit Visual"
+[image5]: ./images_output/test1/test1_3.jpg "Detect lines"
 [image6]: ./examples/example_output.jpg "Output"
 [video1]: ./project_video.mp4 "Video"
 
@@ -163,9 +163,67 @@ I used a combination of color and gradient thresholds to generate a binary image
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+The lane detection was performed using histogram method with sliding window, but also using history along the video frames, in the `sliding_windows_polyfit` function. The latter works only if the lane has been correctly detected in some previous frames. A sanity check based on the polynomial fits and the radius of curvature of the lanes are used to validate the lane detection. If too many frames don't pass the sanity check, the pipeline reverts to the first method (histogram and sliding window) until the lane is detected again.
 
-![alt text][image5]
+##### 4.1 - Historgram and sliding windows
+
+The first step is to compute a histogram of the lower half image (see lines 156 through 161). It gives me the 2 pics where the lanes are located.
+
+After that, the sliding window method is used to extract the lane pixels from the bottom to the top of the image (see lines 176 through 196). It's done by dividing the image into 9 horizontal strips. Each strip (starting from the bottom) is processed one after the other, where a fixed window is centered around the x position of the non zero pixels. Those pixels are appended to the lists `left_lane_inds` and `right_lane_inds`.
+
+These lists are then are used with `np.polyfit` to compute a second order polynomial that fits the points:
+
+```python
+# Concatenate the arrays of indices
+    left_lane_inds = np.concatenate(left_lane_inds)
+    right_lane_inds = np.concatenate(right_lane_inds)
+
+    # Extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    rightx = nonzerox[right_lane_inds]
+    lefty = nonzeroy[left_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+
+    # Fit a second order polynomial to each
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+```
+
+##### 4.2 - History
+
+This method is used to speed up processing with videos once a lane has already been detected before. Previously detected lanes are used to define regions of interest where the lanes are likely to be in. The algorithm uses the base points of the previous lanes to find all non-zero pixels around it in the current image. No histogram is computed in this case, and the windows searching is done once on the entire frame.
+
+This is implemented in the `sliding_windows_polyfit` function in lines 198 through 212.
+
+##### 4.3 - Sanity check
+
+As mentionned before a sanity check is done on each frame to validate the detection regardless of what method is used. It is defined in the function `` in lines 428 through 442:
+
+```python
+def sanity_check(self, left_fit, right_fit, left_curv_radius, right_curv_radius, top_lane_width, bottom_lane_width):
+        # Check that both lines have similar curvature
+        if abs(left_curv_radius - right_curv_radius) > 1500:
+            return False
+
+        # Check that both lines are separated by approximately the right distance horizontally
+        lane_width = (top_lane_width + bottom_lane_width) / 2
+        if abs(2.0 - lane_width) > 0.5:
+            return False
+
+        # Check that both lines are roughly parallel
+        if abs(top_lane_width - bottom_lane_width) > 0.7:
+            return False
+
+        return True
+```
+
+This method checks that: 
+
+- the radius of curvature from left and right lines are similar (absolute difference < 1500)
+- the lane width (2.0 +/- 0.5 meters)
+- bothe lines are parallel (the width at the bottom is roughly equal the width at the top)
+
+![Detect lines][image5]
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
