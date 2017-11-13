@@ -271,6 +271,8 @@ An example image that was processed by the pipeline is shown below:
 
 Here's a [Project Video][video1]
 
+![Final Result Gif](./videos_output/final_result.gif)
+
 ---
 
 ### Discussion
