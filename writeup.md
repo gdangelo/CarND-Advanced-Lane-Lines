@@ -227,7 +227,31 @@ This method checks that:
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+The radius of curvature and the position of the vehicle are computed in the `compute_curvature_radius` method in lines 267 through 307. The pixel values of the lane are converted into meters using the following values:
+
+```python
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+```
+
+These values are used to compute the polynomial coefficients in meters in order to compute the radius of curvature with [this formula](https://www.intmath.com/applications-differentiation/8-radius-curvature.php), and the vehicle position assuming that the camera is centered in the car:
+
+```python
+    left_fit_converted = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
+    right_fit_converted = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+
+    # Choose point to compute curvature just in front of the car
+    yvalue = img.shape[0]
+
+    # Compute curvature radius
+    left_curv_radius = ((1 + (2*left_fit_converted[0]*yvalue + left_fit_converted[1])**2)**1.5) / (2*np.absolute(left_fit_converted[0]))
+    right_curv_radius = ((1 + (2*right_fit_converted[0]*yvalue + right_fit_converted[1])**2)**1.5) / (2*np.absolute(right_fit_converted[0]))
+
+    # Compute distance in meters of vehicle center from the line
+    car_center = img.shape[1]/2  # we assume the camera is centered in the car
+    lane_center = ((left_fit[0]*yvalue**2 + left_fit[1]*yvalue + left_fit[2]) + (right_fit[0]*yvalue**2 + right_fit[1]*yvalue + right_fit[2])) / 2
+    center_dist = (lane_center - car_center) * xm_per_pix
+```
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
