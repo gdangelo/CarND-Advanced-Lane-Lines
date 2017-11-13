@@ -20,7 +20,7 @@ The goals / steps of this project are the following:
 [image3]: ./images_output/test1/test1_1.jpg "Perspective Transform"
 [image4]: ./images_output/test1/test1_2.jpg "Color & Gradient Thresholds"
 [image5]: ./images_output/test1/test1_3.jpg "Detect lines"
-[image6]: ./examples/example_output.jpg "Output"
+[image6]: ./images_output/final_result.png "Final Result"
 [video1]: ./project_video.mp4 "Video"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
@@ -255,9 +255,13 @@ These values are used to compute the polynomial coefficients in meters in order 
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+As a reminder, the complete pipeline is defined in the `process_image` function in lines 466 through 512 of the `pipeline.py` file.
 
-![alt text][image6]
+The detected lane and some information (radius of curvature, vehicle position, pipeline steps) are then display on top of the original image using the `draw_lane` and `draw_data` function in lines 309 through 380.
+
+An example image that was processed by the pipeline is shown below: 
+
+![Final Result][image6]
 
 ---
 
